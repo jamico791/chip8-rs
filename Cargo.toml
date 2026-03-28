@@ -1,0 +1,8 @@
+[package]
+name = "chip8"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = "4.6.0"
+eframe = "0.34.1"
