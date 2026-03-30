@@ -1,15 +1,35 @@
-use chip8::Chip8;
+use chip8::{Chip8, Instruction};
+use clap::Parser;
+
+/// A chip
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// the program input file
+    #[arg(short, long)]
+    file: String,
+}
 
 fn main() {
+    let args = Args::parse();
+
+    println!("Running with {}", args.file);
+
     let mut chip8 = Chip8::new();
-    chip8.memory[0x200] = 0x12;
-    chip8.memory[0x201] = 0xE4;
-    chip8.print_mem_slice(0x200, 0x21F);
-    println!("");
+
+    chip8.inject_font();
+    chip8.load_program(args.file);
+    chip8.print_mem_slice(0x200, 0x2FF);
+    println!();
     chip8.print_registers();
-    println!("\n");
-    chip8.fetch();
-    chip8.decode();
-    chip8.execute();
-    chip8.print_registers();
+    loop {
+        chip8.fetch();
+        chip8.decode_execute();
+        chip8.print_registers();
+        chip8.print_screen();
+        if let Instruction::None = chip8.instruction {
+            break;
+        }
+    }
+    
 }
