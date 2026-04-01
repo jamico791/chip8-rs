@@ -1,14 +1,12 @@
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
 use crate::Machine;
 use crate::cli::Args;
 use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
-pub fn init(args: Args, chip8: Arc<Mutex<Machine>>) {
+pub fn init(args: Arc<Args>, chip8: Arc<Mutex<Machine>>) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "My egui App",
@@ -22,13 +20,13 @@ pub fn init(args: Args, chip8: Arc<Mutex<Machine>>) {
 }
 
 struct ChipOxide {
-    args: Args,
+    args: Arc<Args>,
     chip8: Arc<Mutex<Machine>>,
     screen_texture: egui::TextureHandle,
 }
 
 impl ChipOxide {
-    fn new(cc: &eframe::CreationContext<'_>, args: Args, chip8: Arc<Mutex<Machine>>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, args: Arc<Args>, chip8: Arc<Mutex<Machine>>) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_global_style.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -131,6 +129,9 @@ impl eframe::App for ChipOxide {
         let screen_rect = ctx.content_rect();
         let width = screen_rect.width();
 
+        // repaint so things update
+        ctx.request_repaint();
+
         let size = [SCREEN_WIDTH, SCREEN_HEIGHT];
         let converted = self.convert();
         let color_image = egui::ColorImage::from_gray(size, &converted);
@@ -162,6 +163,5 @@ impl eframe::App for ChipOxide {
                 );
             });
         });
-        thread::sleep(Duration::from_nanos(1));
     }
 }

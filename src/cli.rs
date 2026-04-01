@@ -15,4 +15,8 @@ pub struct Args {
     /// activate step mode
     #[arg(short, long)]
     pub step_mode: bool,
+
+    /// activate shift quirk (vY as input if true, vX if false)
+    #[arg(long)]
+    pub shift: bool,
 }

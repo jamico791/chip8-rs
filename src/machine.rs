@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use crate::cli::Args;
 pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 
 pub struct Machine {
@@ -11,11 +14,27 @@ pub struct Machine {
     pub instruction: Instruction,
     pub opcode: u16,
     pub stack: Vec<u16>,
+    args: Arc<Args>,
 }
 
 impl Machine {
-    pub fn init(&mut self) {
-        self.inject_font();
+    pub fn new(args: Arc<Args>) -> Self {
+        let mut machine = Self {
+            memory: [0; 0x1000],
+            screen_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
+            v: [0; 0x10],
+            pc: 0x200,
+            i: 0,
+            dt: 0,
+            st: 0,
+            instruction: Instruction::None,
+            opcode: 0,
+            stack: Vec::new(),
+            args,
+        };
+        machine.inject_font();
+
+        machine
     }
 
     pub fn fetch(&mut self) {
@@ -115,13 +134,27 @@ impl Machine {
                 self.v[x] = self.v[x].wrapping_sub(self.v[y]);
                 Instruction::I8XY5(x, y)
             }
-            (0x8, _, _, 0x6) => Instruction::I8XY6(x, y),
+            (0x8, _, _, 0x6) => {
+                if !self.args.shift {
+                    self.v[x] = self.v[y];
+                }
+                self.v[0xF] = self.v[x] & 1;
+                self.v[x] >>= 1;
+                Instruction::I8XY6(x, y)
+            }
             (0x8, _, _, 0x7) => {
                 self.v[0xF] = if self.v[y] >= self.v[x] { 1 } else { 0 };
                 self.v[x] = self.v[y].wrapping_sub(self.v[x]);
                 Instruction::I8XY7(x, y)
             }
-            (0x8, _, _, 0xE) => Instruction::I8XYE(x, y),
+            (0x8, _, _, 0xE) => {
+                if !self.args.shift {
+                    self.v[x] = self.v[y];
+                }
+                self.v[0xF] = (self.v[x] & 0x80) >> 7;
+                self.v[x] <<= 1;
+                Instruction::I8XYE(x, y)
+            }
             (0x9, _, _, 0x0) => {
                 if self.v[x] != self.v[y] {
                     self.pc += 2;
@@ -241,26 +274,6 @@ impl Machine {
     pub fn cycle(&mut self) {
         self.fetch();
         self.decode_execute();
-    }
-}
-
-impl Default for Machine {
-    fn default() -> Self {
-        let mut chip8 = Machine {
-            memory: [0; 0x1000],
-            screen_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
-            v: [0; 0x10],
-            pc: 0x200,
-            i: 0,
-            dt: 0,
-            st: 0,
-            instruction: Instruction::None,
-            opcode: 0,
-            stack: Vec::new(),
-        };
-        chip8.init();
-
-        chip8
     }
 }
 
