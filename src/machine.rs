@@ -165,7 +165,15 @@ impl Machine {
                 self.i = nnn;
                 Instruction::IANNN(nnn)
             }
-            (0xB, _, _, _) => Instruction::IBNNN(nnn),
+            (0xB, _, _, _) => {
+                if self.args.jump {
+                    self.pc = nnn + self.v[x] as u16;
+                    Instruction::IBXNN(x, nn)
+                } else {
+                    self.pc = nnn + self.v[0] as u16;
+                    Instruction::IBNNN(nnn)
+                }
+            }
             (0xC, _, _, _) => Instruction::ICXNN(x, nn),
             (0xD, _, _, _) => {
                 let x_coord = (self.v[x] as usize) % SCREEN_WIDTH;
@@ -299,6 +307,7 @@ pub enum Instruction {
     I8XYE(usize, usize),
     I9XY0(usize, usize),
     IANNN(u16),
+    IBXNN(usize, u8),
     IBNNN(u16),
     ICXNN(usize, u8),
     IDXYN(usize, usize, u8),
@@ -339,7 +348,8 @@ impl std::fmt::Display for Instruction {
             Instruction::I8XYE(x, y) => write!(f, "SHL V{x:X}, V{y:X}"),
             Instruction::I9XY0(x, y) => write!(f, "SNE V{x:X}, V{y:X}"),
             Instruction::IANNN(nnn) => write!(f, "LD I, {nnn:03X}"),
-            Instruction::IBNNN(nnn) => write!(f, "JP V0, {nnn:03X}"),
+            Instruction::IBXNN(x, nn) => write!(f, "JP V{x:X} + {x:X}{nn:02X}"),
+            Instruction::IBNNN(nnn) => write!(f, "JP V0 + {nnn:03X}"),
             Instruction::ICXNN(x, nn) => write!(f, "RND V{x:X}, {nn:02X}"),
             Instruction::IDXYN(x, y, n) => write!(f, "DRW V{x:X}, V{y:X}, {n}"),
             Instruction::IEX9E(x) => write!(f, "SKP V{x:X}"),

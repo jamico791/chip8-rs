@@ -19,4 +19,8 @@ pub struct Args {
     /// activate shift quirk (vY as input if true, vX if false)
     #[arg(long)]
     pub shift: bool,
+
+    /// activate jump quirk (XNN + VX if true, NNN + V0 if false)
+    #[arg(long)]
+    pub jump: bool,
 }
