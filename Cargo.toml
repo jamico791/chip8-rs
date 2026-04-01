@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.6.0", features = ["derive"] }
 eframe = "0.34.1"
+egui_extras = "0.34.1"

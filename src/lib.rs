@@ -1,9 +1,11 @@
-const SCREEN_WIDTH: usize = 64;
-const SCREEN_HEIGHT: usize = 32;
+pub mod display;
+mod constants;
+
+use constants::{MEMORY_LENGTH, SCREEN_WIDTH, SCREEN_HEIGHT};
 
 pub struct Chip8 {
     pub memory: [u8; 0x1000], // RAM
-    pub screen: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
+    pub screen_buffer: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
     pub v: [u8; 0x10], // General purpose registers
     pub pc: u16,       // Program counter
     pub i: u16,        // Address register
@@ -14,18 +16,8 @@ pub struct Chip8 {
 }
 
 impl Chip8 {
-    pub fn new() -> Chip8 {
-        Chip8 {
-            memory: [0; 0x1000],
-            screen: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
-            v: [0; 0x10],
-            pc: 0x200,
-            i: 0,
-            dt: 0,
-            st: 0,
-            instruction: Instruction::None,
-            opcode: 0,
-        }
+    pub fn init(&mut self) {
+        self.inject_font();
     }
 
     pub fn print_mem_slice(&self, start: usize, end: usize) {
@@ -107,7 +99,7 @@ impl Chip8 {
 
         self.instruction = match tup {
             (0x0, 0x0, 0xE, 0x0) => {
-                self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+                self.screen_buffer = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
                 Instruction::I00E0
             }
             (0x0, 0x0, 0xE, 0xE) => Instruction::I00EE,
@@ -158,8 +150,8 @@ impl Chip8 {
 
     fn flip_pixel(&mut self, x: usize, y: usize) -> bool {
         let i = (y * SCREEN_WIDTH) + x;
-        self.screen[i] = !self.screen[i];
-        return self.screen[i];
+        self.screen_buffer[i] = !self.screen_buffer[i];
+        return self.screen_buffer[i];
     }
 
     pub fn read_vector(&self, start: u16, length: u16) -> Vec<u8> {
@@ -202,7 +194,7 @@ impl Chip8 {
     }
 
     pub fn print_screen(&self) {
-        for (i, pixel) in self.screen.iter().enumerate() {
+        for (i, pixel) in self.screen_buffer.iter().enumerate() {
             if *pixel {
                 print!("█");
             } else {
@@ -215,7 +207,7 @@ impl Chip8 {
     }
 
     pub fn load_program(&mut self, file: String) {
-        use std::io::{self, Read, BufReader};
+        use std::io::{Read, BufReader};
         use std::fs::File;
         let f = File::open(file).unwrap_or_else(|e| panic!("File could not be opened: {e}"));
         let mut reader = BufReader::new(f);
@@ -225,11 +217,37 @@ impl Chip8 {
 
         self.write_vector(buffer, 0x200);
     }
+
+    pub fn get_screen_buffer(&self) -> &[bool; SCREEN_WIDTH * SCREEN_HEIGHT] {
+        &self.screen_buffer
+    }
+
+    pub fn get_memory(&self) -> &[u8; MEMORY_LENGTH] {
+        &self.memory
+    }
+
+    pub fn cycle(&mut self) {
+        self.fetch();
+        self.decode_execute();
+    }
 }
 
 impl Default for Chip8 {
     fn default() -> Self {
-        Self::new()
+        let mut chip8 = Chip8 {
+            memory: [0; 0x1000],
+            screen_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
+            v: [0; 0x10],
+            pc: 0x200,
+            i: 0,
+            dt: 0,
+            st: 0,
+            instruction: Instruction::None,
+            opcode: 0,
+        };
+        chip8.init();
+
+        chip8
     }
 }
 

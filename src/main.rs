@@ -15,21 +15,22 @@ fn main() {
 
     println!("Running with {}", args.file);
 
-    let mut chip8 = Chip8::new();
+    let mut chip8 = Chip8::default();
 
-    chip8.inject_font();
     chip8.load_program(args.file);
     chip8.print_mem_slice(0x200, 0x2FF);
     println!();
     chip8.print_registers();
-    loop {
-        chip8.fetch();
-        chip8.decode_execute();
-        chip8.print_registers();
-        chip8.print_screen();
-        if let Instruction::None = chip8.instruction {
-            break;
-        }
-    }
+
+    chip8::display::init(chip8);
+    // loop {
+    //     chip8.fetch();
+    //     chip8.decode_execute();
+    //     chip8.print_registers();
+    //     chip8.print_screen();
+    //     if let Instruction::None = chip8.instruction {
+    //         break;
+    //     }
+    // }
     
 }
