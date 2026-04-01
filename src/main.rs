@@ -1,7 +1,7 @@
 use chip8::{Chip8, Instruction};
 use clap::Parser;
 
-/// A chip
+/// A Chip-8 Interpreter
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -32,5 +32,4 @@ fn main() {
     //         break;
     //     }
     // }
-    
 }

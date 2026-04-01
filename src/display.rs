@@ -1,16 +1,21 @@
 use eframe::egui::{self, Rect};
-use egui::{Key, ScrollArea, RichText};
-use egui_extras::{TableBuilder, Column};
+use egui::{Key, RichText, ScrollArea};
+use egui_extras::{Column, TableBuilder};
 
 use crate::Chip8;
-use crate::constants::{SCREEN_WIDTH, SCREEN_HEIGHT};
+use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
 pub fn init(chip8: Chip8) {
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native("My egui App", native_options, Box::new(|cc| {
-        cc.egui_ctx.set_visuals(egui::Visuals::dark()); 
-        Ok(Box::new(MyEguiApp::new(cc, chip8)))
-    })).unwrap_or_else(|e| panic!("Failed to run native: {e}"));
+    eframe::run_native(
+        "My egui App",
+        native_options,
+        Box::new(|cc| {
+            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            Ok(Box::new(MyEguiApp::new(cc, chip8)))
+        }),
+    )
+    .unwrap_or_else(|e| panic!("Failed to run native: {e}"));
 }
 
 struct MyEguiApp {
@@ -26,11 +31,14 @@ impl MyEguiApp {
         // for e.g. egui::PaintCallback.
         let screen_texture = cc.egui_ctx.load_texture(
             "screen",
-            egui::ColorImage::example(),
+            egui::ColorImage::from_rgba_unmultiplied(
+                [SCREEN_WIDTH * 16, SCREEN_HEIGHT * 16],
+                &[255; SCREEN_HEIGHT * SCREEN_WIDTH * 4 * 16 * 16],
+            ),
             egui::TextureOptions::NEAREST,
         );
 
-        Self { 
+        Self {
             chip8,
             screen_texture,
         }
@@ -39,7 +47,10 @@ impl MyEguiApp {
     fn render_debug_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("CPU");
 
-        ui.label(format!("I: {:03X} DT: {:02X} ST: {:02X}", self.chip8.i, self.chip8.dt, self.chip8.st));
+        ui.label(format!(
+            "I: {:03X} DT: {:02X} ST: {:02X}",
+            self.chip8.i, self.chip8.dt, self.chip8.st
+        ));
 
         ui.collapsing("Memory", |ui| {
             let memory_column_width = 16;
@@ -53,7 +64,7 @@ impl MyEguiApp {
                     });
                     for i in 0..memory_column_width {
                         header.col(|ui| {
-                            ui.label(format!{"{i:02X}"});
+                            ui.label(format! {"{i:02X}"});
                         });
                     }
                 })
@@ -71,38 +82,67 @@ impl MyEguiApp {
                                     ui.label(format!("{:02X}", self.chip8.get_memory()[idx]));
                                 });
                             }
-                        }); 
+                        });
                     }
                 });
-
-            });
+        });
     }
 
-    fn render_display(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
-    }
+    fn render_display(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {}
 
+    fn convert(&self) -> [u8; 2048] {
+        let mut res = [0; SCREEN_WIDTH * SCREEN_HEIGHT];
+        for (i, pixel) in self.chip8.get_screen_buffer().iter().enumerate() {
+            if *pixel {
+                res[i] = 255_u8;
+            } else {
+                res[i] = 0_u8;
+            }
+        }
+        return res;
+    }
 }
 
-
 impl eframe::App for MyEguiApp {
-   fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx();
         let screen_rect = ctx.content_rect();
         let width = screen_rect.width();
         let height = screen_rect.height();
 
+        ctx.request_repaint();
+
         self.chip8.cycle();
+
+        let size = [SCREEN_WIDTH, SCREEN_HEIGHT];
+        let converted = self.convert();
+        let color_image = egui::ColorImage::from_gray(size, &converted);
+        self.screen_texture
+            .set(color_image, egui::TextureOptions::NEAREST);
 
         egui::Panel::right("debug_panel")
             .exact_size(width * 0.3)
             .show_inside(ui, |ui| {
-            ui.label("Hello");
-            self.render_debug_panel(ui);
-        });
-
+                ui.label("Hello");
+                self.render_debug_panel(ui);
+            });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.add(egui::Image::new(&self.screen_texture).fit_to_exact_size(egui::vec2(SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32)));
+            let available_size = ui.available_size();
+
+            let scale_x = (available_size.x / SCREEN_WIDTH as f32).floor();
+            let scale_y = (available_size.y / SCREEN_HEIGHT as f32).floor();
+
+            let scale = scale_x.min(scale_y).max(1.0);
+
+            ui.centered_and_justified(|ui| {
+                ui.add(
+                    egui::Image::new(&self.screen_texture).fit_to_exact_size(egui::vec2(
+                        SCREEN_WIDTH as f32 * scale,
+                        SCREEN_HEIGHT as f32 * scale,
+                    )),
+                );
+            });
             // let available = ui.available_size();
             // let pixel_size = (available.x / 64.0).min(available.y / 32.0);
             // let display_size = egui::vec2(pixel_size * 64.0, pixel_size * 32.0);
@@ -113,5 +153,6 @@ impl eframe::App for MyEguiApp {
 
             // self.render_display(ui, rect);
         });
-   }
+    }
 }
+
