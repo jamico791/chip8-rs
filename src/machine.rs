@@ -1,9 +1,6 @@
-pub mod display;
-mod constants;
+pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 
-use constants::{MEMORY_LENGTH, SCREEN_WIDTH, SCREEN_HEIGHT};
-
-pub struct Chip8 {
+pub struct Machine {
     pub memory: [u8; 0x1000], // RAM
     pub screen_buffer: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
     pub v: [u8; 0x10], // General purpose registers
@@ -13,79 +10,26 @@ pub struct Chip8 {
     pub st: u8,        // Sound timer register
     pub instruction: Instruction,
     pub opcode: u16,
+    pub stack: Vec<u16>,
 }
 
-impl Chip8 {
+impl Machine {
     pub fn init(&mut self) {
         self.inject_font();
     }
 
-    pub fn print_mem_slice(&self, start: usize, end: usize) {
-        let sub_slice = self
-            .memory
-            .get(start..=end)
-            .unwrap_or_else(|| panic!("print_mem_slice: Invalid start and/or end"));
-
-        for (i, byte) in sub_slice.iter().enumerate() {
-            if (i + 16) % 16 == 0 {
-                print!("{:03X}  ", i + start);
-            }
-            print!("{:02X}", byte);
-            if (i + 1) % 16 == 0 {
-                println!();
-            } else if (i + 1) % 2 == 0 {
-                print!(" ");
-            }
-        }
-    }
-
-    pub fn print_mem(&self) {
-        self.print_mem_slice(0, self.memory.len() - 1);
-    }
-
-    fn print_v(&self) {
-        for i in 0..self.v.len() {
-            print!("V{i:X}: {:02X}", self.v[i]);
-            if (i + 1) % 2 == 0 && i != 0 && i != self.v.len() - 1 {
-                println!()
-            } else {
-                print!(" ");
-            }
-        }
-        println!();
-    }
-
-    fn print_special_registers(&self) {
-        println!("I: {:03X} DT: {:02X} ST: {:02X}", self.i, self.dt, self.st);
-    }
-
-    fn print_instruction(&self) {
-        println!(
-            "PC: {:03X} Opcode: {:04X} Instruction: {}",
-            self.pc, self.opcode, self.instruction
-        );
-    }
-
-    pub fn print_registers(&self) {
-        self.print_instruction();
-        self.print_special_registers();
-        println!();
-
-        self.print_v();
-    }
-
     pub fn fetch(&mut self) {
         let usize_pc = self.pc as usize;
-        let left_byte = *self.memory.get(usize_pc).unwrap_or_else(|| &0) as u16;
-        let right_byte = *self.memory.get(usize_pc + 1).unwrap_or_else(|| &0) as u16;
+        let left_byte = *self.memory.get(usize_pc).unwrap_or(&0) as u16;
+        let right_byte = *self.memory.get(usize_pc + 1).unwrap_or(&0) as u16;
 
         self.opcode = (left_byte << 8) | right_byte;
         self.pc += 2;
     }
 
     pub fn decode_execute(&mut self) {
-        let x: u8 = ((self.opcode & 0xF00) >> 8) as u8;
-        let y: u8 = ((self.opcode & 0xF0) >> 4) as u8;
+        let x: usize = ((self.opcode & 0xF00) >> 8) as usize;
+        let y: usize = ((self.opcode & 0xF0) >> 4) as usize;
         let n: u8 = (self.opcode & 0xF) as u8;
         let nn: u8 = (self.opcode & 0xFF) as u8;
         let nnn: u16 = self.opcode & 0xFFF;
@@ -102,29 +46,99 @@ impl Chip8 {
                 self.screen_buffer = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
                 Instruction::I00E0
             }
-            (0x0, 0x0, 0xE, 0xE) => Instruction::I00EE,
+            (0x0, 0x0, 0xE, 0xE) => {
+                self.pc = self
+                    .stack
+                    .pop()
+                    .unwrap_or_else(|| panic!("Error when popping subroutine off stack"));
+                Instruction::I00EE
+            }
             (0x1, _, _, _) => {
                 self.pc = nnn;
                 Instruction::I1NNN(nnn)
             }
+            (0x2, _, _, _) => {
+                self.stack.push(self.pc);
+                self.pc = nnn;
+                Instruction::I2NNN(nnn)
+            }
+            (0x3, _, _, _) => {
+                if self.v[x] == nn {
+                    self.pc += 2;
+                }
+                Instruction::I3XNN(x, nn)
+            }
+            (0x4, _, _, _) => {
+                if self.v[x] != nn {
+                    self.pc += 2;
+                }
+                Instruction::I4XNN(x, nn)
+            }
+            (0x5, _, _, 0x0) => {
+                if self.v[x] == self.v[y] {
+                    self.pc += 2;
+                }
+                Instruction::I5XY0(x, y)
+            }
             (0x6, _, _, _) => {
-                self.v[x as usize] = nn;
+                self.v[x] = nn;
                 Instruction::I6XNN(x, nn)
             }
             (0x7, _, _, _) => {
-                self.v[x as usize] += nn;
+                self.v[x] = self.v[x].wrapping_add(nn);
                 Instruction::I7XNN(x, nn)
+            }
+            (0x8, _, _, 0x0) => {
+                self.v[x] = self.v[y];
+                Instruction::I8XY0(x, y)
+            }
+            (0x8, _, _, 0x1) => {
+                self.v[x] |= self.v[y];
+                Instruction::I8XY1(x, y)
+            }
+            (0x8, _, _, 0x2) => {
+                self.v[x] &= self.v[y];
+                Instruction::I8XY2(x, y)
+            }
+            (0x8, _, _, 0x3) => {
+                self.v[x] ^= self.v[y];
+                Instruction::I8XY3(x, y)
+            }
+            (0x8, _, _, 0x4) => {
+                let (result, did_overflow) = self.v[x].overflowing_add(self.v[y]);
+                self.v[x] = result;
+                self.v[y] = if did_overflow { 1 } else { 0 };
+                Instruction::I8XY4(x, y)
+            }
+            (0x8, _, _, 0x5) => {
+                self.v[0xF] = if self.v[x] >= self.v[y] { 1 } else { 0 };
+                self.v[x] = self.v[x].wrapping_sub(self.v[y]);
+                Instruction::I8XY5(x, y)
+            }
+            (0x8, _, _, 0x6) => Instruction::I8XY6(x, y),
+            (0x8, _, _, 0x7) => {
+                self.v[0xF] = if self.v[y] >= self.v[x] { 1 } else { 0 };
+                self.v[x] = self.v[y].wrapping_sub(self.v[x]);
+                Instruction::I8XY7(x, y)
+            }
+            (0x8, _, _, 0xE) => Instruction::I8XYE(x, y),
+            (0x9, _, _, 0x0) => {
+                if self.v[x] != self.v[y] {
+                    self.pc += 2;
+                }
+                Instruction::I9XY0(x, y)
             }
             (0xA, _, _, _) => {
                 self.i = nnn;
                 Instruction::IANNN(nnn)
             }
+            (0xB, _, _, _) => Instruction::IBNNN(nnn),
+            (0xC, _, _, _) => Instruction::ICXNN(x, nn),
             (0xD, _, _, _) => {
-                let x_coord = (self.v[x as usize] as usize) % SCREEN_WIDTH;
-                let y_coord = (self.v[y as usize] as usize) % SCREEN_HEIGHT;
+                let x_coord = (self.v[x] as usize) % SCREEN_WIDTH;
+                let y_coord = (self.v[y] as usize) % SCREEN_HEIGHT;
                 let sprite_vec = self.read_vector(self.i, n as u16);
                 let mut had_collision = false;
-                println!("x: {x_coord} y: {y_coord} sprite_vec: {sprite_vec:?}");
 
                 for (i, byte) in sprite_vec.iter().enumerate() {
                     let reverse_byte = byte.reverse_bits();
@@ -133,10 +147,8 @@ impl Chip8 {
                         let adjusted_y = y_coord + i;
                         if adjusted_x < SCREEN_WIDTH && adjusted_y < SCREEN_HEIGHT {
                             let bit = (reverse_byte >> j) & 1;
-                            if bit == 1 {
-                                if !self.flip_pixel(adjusted_x, adjusted_y) {
-                                    had_collision = true;
-                                }
+                            if bit == 1 && !self.flip_pixel(adjusted_x, adjusted_y) {
+                                had_collision = true;
                             }
                         }
                     }
@@ -144,6 +156,17 @@ impl Chip8 {
                 self.v[0xF] = if had_collision { 1 } else { 0 };
                 Instruction::IDXYN(x, y, n)
             }
+            (0xE, _, 0x9, 0xE) => Instruction::IEX9E(x),
+            (0xE, _, 0xA, 0x1) => Instruction::IEXA1(x),
+            (0xF, _, 0x0, 0x7) => Instruction::IFX07(x),
+            (0xF, _, 0x1, 0x5) => Instruction::IFX15(x),
+            (0xF, _, 0x1, 0x8) => Instruction::IFX18(x),
+            (0xF, _, 0x1, 0xE) => Instruction::IFX1E(x),
+            (0xF, _, 0x0, 0xA) => Instruction::IFX0A(x),
+            (0xF, _, 0x2, 0x9) => Instruction::IFX29(x),
+            (0xF, _, 0x3, 0x3) => Instruction::IFX33(x),
+            (0xF, _, 0x5, 0x5) => Instruction::IFX55(x),
+            (0xF, _, 0x6, 0x5) => Instruction::IFX65(x),
             (_, _, _, _) => Instruction::None,
         };
     }
@@ -151,7 +174,7 @@ impl Chip8 {
     fn flip_pixel(&mut self, x: usize, y: usize) -> bool {
         let i = (y * SCREEN_WIDTH) + x;
         self.screen_buffer[i] = !self.screen_buffer[i];
-        return self.screen_buffer[i];
+        self.screen_buffer[i]
     }
 
     pub fn read_vector(&self, start: u16, length: u16) -> Vec<u8> {
@@ -193,27 +216,16 @@ impl Chip8 {
         self.write_vector(font_vec, 0x050);
     }
 
-    pub fn print_screen(&self) {
-        for (i, pixel) in self.screen_buffer.iter().enumerate() {
-            if *pixel {
-                print!("█");
-            } else {
-                print!(" ")
-            }
-            if (i + 1) % SCREEN_WIDTH == 0 {
-                println!();
-            }
-        }
-    }
-
-    pub fn load_program(&mut self, file: String) {
-        use std::io::{Read, BufReader};
+    pub fn load_program(&mut self, file: &String) {
         use std::fs::File;
+        use std::io::{BufReader, Read};
         let f = File::open(file).unwrap_or_else(|e| panic!("File could not be opened: {e}"));
         let mut reader = BufReader::new(f);
         let mut buffer = Vec::new();
-        
-        reader.read_to_end(&mut buffer).unwrap_or_else(|e| panic!("Failed to read file: {e}"));
+
+        reader
+            .read_to_end(&mut buffer)
+            .unwrap_or_else(|e| panic!("Failed to read file: {e}"));
 
         self.write_vector(buffer, 0x200);
     }
@@ -232,9 +244,9 @@ impl Chip8 {
     }
 }
 
-impl Default for Chip8 {
+impl Default for Machine {
     fn default() -> Self {
-        let mut chip8 = Chip8 {
+        let mut chip8 = Machine {
             memory: [0; 0x1000],
             screen_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
             v: [0; 0x10],
@@ -244,6 +256,7 @@ impl Default for Chip8 {
             st: 0,
             instruction: Instruction::None,
             opcode: 0,
+            stack: Vec::new(),
         };
         chip8.init();
 
@@ -253,41 +266,40 @@ impl Default for Chip8 {
 
 #[derive(Debug)]
 pub enum Instruction {
-    I0NNN(u16),
     I00E0,
     I00EE,
     I1NNN(u16),
     I2NNN(u16),
-    I3XNN(u8, u8),
-    I4XNN(u8, u8),
-    I5XY0(u8, u8),
-    I6XNN(u8, u8),
-    I7XNN(u8, u8),
-    I8XY0(u8, u8),
-    I8XY1(u8, u8),
-    I8XY2(u8, u8),
-    I8XY3(u8, u8),
-    I8XY4(u8, u8),
-    I8XY5(u8, u8),
-    I8XY6(u8, u8),
-    I8XY7(u8, u8),
-    I8XYE(u8, u8),
-    I9XY0(u8, u8),
+    I3XNN(usize, u8),
+    I4XNN(usize, u8),
+    I5XY0(usize, usize),
+    I6XNN(usize, u8),
+    I7XNN(usize, u8),
+    I8XY0(usize, usize),
+    I8XY1(usize, usize),
+    I8XY2(usize, usize),
+    I8XY3(usize, usize),
+    I8XY4(usize, usize),
+    I8XY5(usize, usize),
+    I8XY6(usize, usize),
+    I8XY7(usize, usize),
+    I8XYE(usize, usize),
+    I9XY0(usize, usize),
     IANNN(u16),
     IBNNN(u16),
-    ICXNN(u8, u8),
-    IDXYN(u8, u8, u8),
-    IEX9E(u8),
-    IEXA1(u8),
-    IFX07(u8),
-    IFX0A(u8),
-    IFX15(u8),
-    IFX18(u8),
-    IFX1E(u8),
-    IFX29(u8),
-    IFX33(u8),
-    IFX55(u8),
-    IFX65(u8),
+    ICXNN(usize, u8),
+    IDXYN(usize, usize, u8),
+    IEX9E(usize),
+    IEXA1(usize),
+    IFX07(usize),
+    IFX0A(usize),
+    IFX15(usize),
+    IFX18(usize),
+    IFX1E(usize),
+    IFX29(usize),
+    IFX33(usize),
+    IFX55(usize),
+    IFX65(usize),
     None,
 }
 
@@ -296,7 +308,6 @@ impl std::fmt::Display for Instruction {
         match self {
             Instruction::I00E0 => write!(f, "CLS"),
             Instruction::I00EE => write!(f, "RET"),
-            Instruction::I0NNN(nnn) => write!(f, "SYS {nnn:03X}"),
             Instruction::I1NNN(nnn) => write!(f, "JP {nnn:03X}"),
             Instruction::I2NNN(nnn) => write!(f, "CALL {nnn:03X}"),
             Instruction::I3XNN(x, nn) => write!(f, "SE V{x:X}, {nn:02X}"),

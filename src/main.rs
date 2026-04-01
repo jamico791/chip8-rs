@@ -1,35 +1,53 @@
-use chip8::{Chip8, Instruction};
-use clap::Parser;
+mod chip_oxide;
+mod cli;
+mod constants;
+mod machine;
 
-/// A Chip-8 Interpreter
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// the program input file
-    #[arg(short, long)]
-    file: String,
-}
+use clap::Parser;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+
+use cli::Args;
+use machine::Machine;
 
 fn main() {
     let args = Args::parse();
 
     println!("Running with {}", args.file);
 
-    let mut chip8 = Chip8::default();
+    let machine = Arc::new(Mutex::new(Machine::default()));
+    let machine_app_copy = Arc::clone(&machine);
+    let machine_timer_copy = Arc::clone(&machine);
 
-    chip8.load_program(args.file);
-    chip8.print_mem_slice(0x200, 0x2FF);
-    println!();
-    chip8.print_registers();
+    machine.lock().unwrap().load_program(&args.file);
+    machine.lock().unwrap().dt = 255;
 
-    chip8::display::init(chip8);
-    // loop {
-    //     chip8.fetch();
-    //     chip8.decode_execute();
-    //     chip8.print_registers();
-    //     chip8.print_screen();
-    //     if let Instruction::None = chip8.instruction {
-    //         break;
-    //     }
-    // }
+    // spawn timer thread
+    thread::spawn(move || {
+        loop {
+            {
+                let mut c = machine_timer_copy.lock().unwrap();
+                if c.dt > 0 {
+                    c.dt -= 1;
+                }
+                if c.st > 0 {
+                    c.st -= 1;
+                }
+            }
+            thread::sleep(Duration::from_nanos(16_670_000));
+        }
+    });
+
+    // spawn machine thread
+    thread::spawn(move || {
+        loop {
+            if !args.step_mode {
+                machine.lock().unwrap().cycle();
+                thread::sleep(Duration::from_nanos(1));
+            }
+        }
+    });
+
+    chip_oxide::init(args, machine_app_copy);
 }

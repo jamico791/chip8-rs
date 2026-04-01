@@ -1,30 +1,34 @@
-use eframe::egui::{self, Rect};
-use egui::{Key, RichText, ScrollArea};
+use eframe::egui;
 use egui_extras::{Column, TableBuilder};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
-use crate::Chip8;
+use crate::Machine;
+use crate::cli::Args;
 use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
 
-pub fn init(chip8: Chip8) {
+pub fn init(args: Args, chip8: Arc<Mutex<Machine>>) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "My egui App",
         native_options,
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
-            Ok(Box::new(MyEguiApp::new(cc, chip8)))
+            Ok(Box::new(ChipOxide::new(cc, args, chip8)))
         }),
     )
     .unwrap_or_else(|e| panic!("Failed to run native: {e}"));
 }
 
-struct MyEguiApp {
-    chip8: Chip8,
+struct ChipOxide {
+    args: Args,
+    chip8: Arc<Mutex<Machine>>,
     screen_texture: egui::TextureHandle,
 }
 
-impl MyEguiApp {
-    fn new(cc: &eframe::CreationContext<'_>, chip8: Chip8) -> Self {
+impl ChipOxide {
+    fn new(cc: &eframe::CreationContext<'_>, args: Args, chip8: Arc<Mutex<Machine>>) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_global_style.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -32,25 +36,44 @@ impl MyEguiApp {
         let screen_texture = cc.egui_ctx.load_texture(
             "screen",
             egui::ColorImage::from_rgba_unmultiplied(
-                [SCREEN_WIDTH * 16, SCREEN_HEIGHT * 16],
-                &[255; SCREEN_HEIGHT * SCREEN_WIDTH * 4 * 16 * 16],
+                [SCREEN_WIDTH, SCREEN_HEIGHT],
+                &[255; SCREEN_HEIGHT * SCREEN_WIDTH * 4],
             ),
             egui::TextureOptions::NEAREST,
         );
 
         Self {
+            args,
             chip8,
             screen_texture,
         }
     }
 
     fn render_debug_panel(&mut self, ui: &mut egui::Ui) {
+        if self.args.step_mode && ui.button("Step Forward").clicked() {
+            self.chip8.lock().unwrap().cycle();
+        }
+        let chip8 = self.chip8.lock().unwrap();
         ui.heading("CPU");
 
         ui.label(format!(
             "I: {:03X} DT: {:02X} ST: {:02X}",
-            self.chip8.i, self.chip8.dt, self.chip8.st
+            chip8.i, chip8.dt, chip8.st
         ));
+        ui.label(format!(
+            "PC: {:03X} Opcode: {:04X} Instruction: {}",
+            chip8.pc, chip8.opcode, chip8.instruction
+        ));
+
+        for i in (0..chip8.v.len()).step_by(2) {
+            ui.label(format!(
+                "V{:X}: {:02X} V{:X}: {:02X}",
+                i,
+                chip8.v[i],
+                i + 1,
+                chip8.v[i + 1]
+            ));
+        }
 
         ui.collapsing("Memory", |ui| {
             let memory_column_width = 16;
@@ -69,7 +92,7 @@ impl MyEguiApp {
                     }
                 })
                 .body(|mut body| {
-                    let row_count = self.chip8.get_memory().len() / memory_column_width;
+                    let row_count = chip8.get_memory().len() / memory_column_width;
 
                     for i in 0..row_count {
                         body.row(10.0, |mut row| {
@@ -79,7 +102,7 @@ impl MyEguiApp {
                             for j in 0..memory_column_width {
                                 let idx = i * memory_column_width + j;
                                 row.col(|ui| {
-                                    ui.label(format!("{:02X}", self.chip8.get_memory()[idx]));
+                                    ui.label(format!("{:02X}", chip8.get_memory()[idx]));
                                 });
                             }
                         });
@@ -88,31 +111,25 @@ impl MyEguiApp {
         });
     }
 
-    fn render_display(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {}
-
     fn convert(&self) -> [u8; 2048] {
+        let chip8 = self.chip8.lock().unwrap();
         let mut res = [0; SCREEN_WIDTH * SCREEN_HEIGHT];
-        for (i, pixel) in self.chip8.get_screen_buffer().iter().enumerate() {
+        for (i, pixel) in chip8.get_screen_buffer().iter().enumerate() {
             if *pixel {
                 res[i] = 255_u8;
             } else {
                 res[i] = 0_u8;
             }
         }
-        return res;
+        res
     }
 }
 
-impl eframe::App for MyEguiApp {
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+impl eframe::App for ChipOxide {
+    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         let ctx = ui.ctx();
         let screen_rect = ctx.content_rect();
         let width = screen_rect.width();
-        let height = screen_rect.height();
-
-        ctx.request_repaint();
-
-        self.chip8.cycle();
 
         let size = [SCREEN_WIDTH, SCREEN_HEIGHT];
         let converted = self.convert();
@@ -120,12 +137,13 @@ impl eframe::App for MyEguiApp {
         self.screen_texture
             .set(color_image, egui::TextureOptions::NEAREST);
 
-        egui::Panel::right("debug_panel")
-            .exact_size(width * 0.3)
-            .show_inside(ui, |ui| {
-                ui.label("Hello");
-                self.render_debug_panel(ui);
-            });
+        if self.args.debug {
+            egui::Panel::right("debug_panel")
+                .exact_size(width * 0.3)
+                .show_inside(ui, |ui| {
+                    self.render_debug_panel(ui);
+                });
+        }
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
             let available_size = ui.available_size();
@@ -143,16 +161,7 @@ impl eframe::App for MyEguiApp {
                     )),
                 );
             });
-            // let available = ui.available_size();
-            // let pixel_size = (available.x / 64.0).min(available.y / 32.0);
-            // let display_size = egui::vec2(pixel_size * 64.0, pixel_size * 32.0);
-
-            // let offset = (available - display_size) / 2.0;
-            // let top_left = ui.min_rect().min + offset;
-            // let rect = egui::Rect::from_min_size(top_left, display_size);
-
-            // self.render_display(ui, rect);
         });
+        thread::sleep(Duration::from_nanos(1));
     }
 }
-
