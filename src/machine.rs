@@ -1,7 +1,7 @@
 use std::{sync::{Arc, Mutex}, thread, time::Duration};
 
 use crate::cli::Args;
-pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
+pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH, FONT_START};
 use crate::keyboard::Keyboard;
 
 pub struct Machine {
@@ -242,30 +242,35 @@ impl Machine {
             }
             (0xF, _, 0x0, 0xA) => {
                 let kb = self.keyboard.lock().unwrap();
-                match self.waiting_for_key_release {
-                    Some(key_num) =>{
-                        if kb.get_key(key_num) {
+                if self.args.get_key_on_release {
+                    match self.waiting_for_key_release {
+                        Some(key_num) =>{
+                            if kb.get_key(key_num) {
+                                self.pc -= 2;
+                            } else {
+                                self.v[x] = key_num as u8;
+                                self.waiting_for_key_release = None;
+                            }
+                        },
+                        None => {
+                            self.waiting_for_key_release = kb.get_pressed();
                             self.pc -= 2;
-                        } else {
-                            self.v[x] = key_num as u8;
-                            self.waiting_for_key_release = None;
                         }
-                    },
-                    None => {
-                        let mut i = 0;
-                        while i < 16 && !kb.get_key(i) {
-                            i += 1; 
-                        }
-                        if i < 16 {
-                            self.waiting_for_key_release = Some(i);
-                        }
+                    }
+                } else {
+                    if let Some(key_num) = kb.get_pressed() {
+                        self.v[x] = key_num as u8;
+                    } else {
                         self.pc -= 2;
                     }
                 }
                 
                 Instruction::IFX0A(x)
             }
-            (0xF, _, 0x2, 0x9) => Instruction::IFX29(x),
+            (0xF, _, 0x2, 0x9) => {
+                self.i = (FONT_START + (self.v[x] as usize * 5)) as u16;
+                Instruction::IFX29(x)
+            }
             (0xF, _, 0x3, 0x3) => Instruction::IFX33(x),
             (0xF, _, 0x5, 0x5) => Instruction::IFX55(x),
             (0xF, _, 0x6, 0x5) => Instruction::IFX65(x),
@@ -315,7 +320,7 @@ impl Machine {
             0xF0, 0x80, 0xF0, 0x80, 0x80, // F
         ];
 
-        self.write_vector(font_vec, 0x050);
+        self.write_vector(font_vec, FONT_START);
     }
 
     pub fn load_program(&mut self, file: &String) {
@@ -341,14 +346,6 @@ impl Machine {
     }
 
     pub fn cycle(&mut self) {
-        // if let Some(key_num) = self.waiting_for_key {
-        //     if self.keyboard.lock().unwrap().get_key(key_num) {
-        //         self.waiting_for_key = None;
-        //     } else {
-        //         return;
-        //     }
-        // }
-
         self.fetch();
         self.decode_execute();
     }

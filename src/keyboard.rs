@@ -5,15 +5,12 @@ use eframe::egui::Key;
 
 pub struct Keyboard {
     pub key_list: [bool; 16],
-    /// An array of references to any condvars waiting for response
-    pub wait_list: [Option<Arc<Condvar>>; 16],
 }
 
 impl Keyboard {
     pub fn new() -> Self {
         Keyboard {
             key_list: [false; 16],
-            wait_list: [const { None }; 16],
         }
     }
 
@@ -40,16 +37,15 @@ impl Keyboard {
         self.key_list[key_num]
     }
 
-    pub fn set_wait(&mut self, key_num: usize) -> Arc<Condvar> {
-        let cvar = Arc::new(Condvar::new());
-        self.wait_list[key_num] = Some(Arc::clone(&cvar));
-        cvar
-    }
-
-    pub fn release_wait(&mut self, key_num: usize) {
-        match &self.wait_list[key_num] {
-            Some(cvar) => cvar.notify_one(),
-            None => panic!("Attempted release of {key_num} key failed"),
-        };
+    pub fn get_pressed(&self) -> Option<usize> {
+        let mut i = 0;
+        while i < 16 && !self.get_key(i) {
+            i += 1; 
+        }
+        if i < 16 {
+            Some(i)
+        } else {
+            None
+        }
     }
 }

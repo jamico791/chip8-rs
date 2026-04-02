@@ -24,7 +24,11 @@ pub struct Args {
     #[arg(long)]
     pub jump: bool,
 
-    /// Set vF to 1 if I overflows to 0x1000 during Fx1E instruction
+    /// Set vF to 1 if I overflows to 0x1000 during Fx1E instruction if true
     #[arg(long)]
     pub fx1e_i_overflow: bool,
+
+    /// Get key instruction happens on release if true, on press if false
+    #[arg(long)]
+    pub get_key_on_release: bool,
 }
