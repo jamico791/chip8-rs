@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use crate::{audio::Audio, cli::Args};
-pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH, FONT_START};
+pub use crate::constants::{FONT_START, MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::keyboard::Keyboard;
+use crate::{audio::Audio, cli::Args};
 
 pub struct Machine {
     pub memory: [u8; 0x1000], // RAM
@@ -246,14 +246,14 @@ impl Machine {
                 let kb = self.keyboard.lock().unwrap();
                 if self.args.get_key_on_release {
                     match self.waiting_for_key_release {
-                        Some(key_num) =>{
+                        Some(key_num) => {
                             if kb.get_key(key_num) {
                                 self.pc -= 2;
                             } else {
                                 self.v[x] = key_num as u8;
                                 self.waiting_for_key_release = None;
                             }
-                        },
+                        }
                         None => {
                             self.waiting_for_key_release = kb.get_pressed();
                             self.pc -= 2;
@@ -266,14 +266,25 @@ impl Machine {
                         self.pc -= 2;
                     }
                 }
-                
                 Instruction::IFX0A(x)
             }
             (0xF, _, 0x2, 0x9) => {
                 self.i = (FONT_START + (self.v[x] as usize * 5)) as u16;
                 Instruction::IFX29(x)
             }
-            (0xF, _, 0x3, 0x3) => Instruction::IFX33(x),
+            (0xF, _, 0x3, 0x3) => {
+                if self.i >= 0xFFE {
+                    panic!("Out of bounds memory access attempt from instruction FX33")
+                }
+                let ones = self.v[x] % 10;
+                let tens = (self.v[x] / 10) % 10;
+                let hundreds = self.v[x] / 100;
+
+                self.memory[self.i as usize] = hundreds;
+                self.memory[self.i as usize + 1] = tens;
+                self.memory[self.i as usize + 2] = ones;
+                Instruction::IFX33(x)
+            }
             (0xF, _, 0x5, 0x5) => Instruction::IFX55(x),
             (0xF, _, 0x6, 0x5) => Instruction::IFX65(x),
             (_, _, _, _) => Instruction::None,
@@ -354,7 +365,7 @@ impl Machine {
     }
 
     fn set_beep(&mut self) {
-        if self.st > 0{
+        if self.st > 0 {
             self.audio.on();
         } else {
             self.audio.off();

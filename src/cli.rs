@@ -31,4 +31,8 @@ pub struct Args {
     /// Get key instruction happens on release if true, on press if false
     #[arg(long)]
     pub get_key_on_release: bool,
+
+    /// The number of cycles per second
+    #[arg(short, long, default_value_t = 700)]
+    pub cycles_per_second: u32,
 }

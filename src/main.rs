@@ -1,9 +1,9 @@
+mod audio;
 mod chip_oxide;
 mod cli;
 mod constants;
 mod keyboard;
 mod machine;
-mod audio;
 
 use clap::Parser;
 use std::sync::{Arc, Mutex};
@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use cli::Args;
 use machine::Machine;
-
 
 fn main() {
     let args = Arc::new(Args::parse());
@@ -47,12 +46,13 @@ fn main() {
     });
 
     let step_mode = args.step_mode;
+    let machine_sleep_duration = 1_000_000_000 / args.cycles_per_second;
     // spawn machine thread
     thread::spawn(move || {
         loop {
             if !step_mode {
                 machine.lock().unwrap().cycle();
-                thread::sleep(Duration::from_nanos(1));
+                thread::sleep(Duration::from_nanos(machine_sleep_duration as u64));
             }
         }
     });
