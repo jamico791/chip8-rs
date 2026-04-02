@@ -1,3 +1,4 @@
+use rand::prelude::*;
 use std::sync::Arc;
 
 use crate::cli::Args;
@@ -174,7 +175,11 @@ impl Machine {
                     Instruction::IBNNN(nnn)
                 }
             }
-            (0xC, _, _, _) => Instruction::ICXNN(x, nn),
+            (0xC, _, _, _) => {
+                let r: u8 = rand::random();
+                self.v[x] = r & nn;
+                Instruction::ICXNN(x, nn)
+            }
             (0xD, _, _, _) => {
                 let x_coord = (self.v[x] as usize) % SCREEN_WIDTH;
                 let y_coord = (self.v[y] as usize) % SCREEN_HEIGHT;
@@ -199,9 +204,18 @@ impl Machine {
             }
             (0xE, _, 0x9, 0xE) => Instruction::IEX9E(x),
             (0xE, _, 0xA, 0x1) => Instruction::IEXA1(x),
-            (0xF, _, 0x0, 0x7) => Instruction::IFX07(x),
-            (0xF, _, 0x1, 0x5) => Instruction::IFX15(x),
-            (0xF, _, 0x1, 0x8) => Instruction::IFX18(x),
+            (0xF, _, 0x0, 0x7) => {
+                self.v[x] = self.dt;
+                Instruction::IFX07(x)
+            }
+            (0xF, _, 0x1, 0x5) => {
+                self.dt = self.v[x];
+                Instruction::IFX15(x)
+            }
+            (0xF, _, 0x1, 0x8) => {
+                self.st = self.v[x];
+                Instruction::IFX18(x)
+            }
             (0xF, _, 0x1, 0xE) => Instruction::IFX1E(x),
             (0xF, _, 0x0, 0xA) => Instruction::IFX0A(x),
             (0xF, _, 0x2, 0x9) => Instruction::IFX29(x),
