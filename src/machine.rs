@@ -1,5 +1,4 @@
-use rand::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, thread, time::Duration};
 
 use crate::cli::Args;
 pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
@@ -18,6 +17,7 @@ pub struct Machine {
     pub stack: Vec<u16>,
     args: Arc<Args>,
     keyboard: Arc<Mutex<Keyboard>>,
+    waiting_for_key_release: Option<usize>,
 }
 
 impl Machine {
@@ -35,6 +35,7 @@ impl Machine {
             stack: Vec::new(),
             args,
             keyboard,
+            waiting_for_key_release: None,
         };
         machine.inject_font();
 
@@ -228,11 +229,42 @@ impl Machine {
                 Instruction::IFX15(x)
             }
             (0xF, _, 0x1, 0x8) => {
-                self.dt = self.v[x];
+                self.st = self.v[x];
                 Instruction::IFX18(x)
             }
-            (0xF, _, 0x1, 0xE) => Instruction::IFX1E(x),
-            (0xF, _, 0x0, 0xA) => Instruction::IFX0A(x),
+            (0xF, _, 0x1, 0xE) => {
+                let sum = self.i + self.v[x] as u16;
+                if self.args.fx1e_i_overflow && sum > 0xFFF {
+                    self.v[0xF] = 1
+                }
+                self.i = sum & 0xFFF;
+                Instruction::IFX1E(x)
+            }
+            (0xF, _, 0x0, 0xA) => {
+                let kb = self.keyboard.lock().unwrap();
+                match self.waiting_for_key_release {
+                    Some(key_num) =>{
+                        if kb.get_key(key_num) {
+                            self.pc -= 2;
+                        } else {
+                            self.v[x] = key_num as u8;
+                            self.waiting_for_key_release = None;
+                        }
+                    },
+                    None => {
+                        let mut i = 0;
+                        while i < 16 && !kb.get_key(i) {
+                            i += 1; 
+                        }
+                        if i < 16 {
+                            self.waiting_for_key_release = Some(i);
+                        }
+                        self.pc -= 2;
+                    }
+                }
+                
+                Instruction::IFX0A(x)
+            }
             (0xF, _, 0x2, 0x9) => Instruction::IFX29(x),
             (0xF, _, 0x3, 0x3) => Instruction::IFX33(x),
             (0xF, _, 0x5, 0x5) => Instruction::IFX55(x),
@@ -309,6 +341,14 @@ impl Machine {
     }
 
     pub fn cycle(&mut self) {
+        // if let Some(key_num) = self.waiting_for_key {
+        //     if self.keyboard.lock().unwrap().get_key(key_num) {
+        //         self.waiting_for_key = None;
+        //     } else {
+        //         return;
+        //     }
+        // }
+
         self.fetch();
         self.decode_execute();
     }
