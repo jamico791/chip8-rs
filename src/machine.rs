@@ -1,8 +1,9 @@
 use rand::prelude::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::cli::Args;
 pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::keyboard::Keyboard;
 
 pub struct Machine {
     pub memory: [u8; 0x1000], // RAM
@@ -16,10 +17,11 @@ pub struct Machine {
     pub opcode: u16,
     pub stack: Vec<u16>,
     args: Arc<Args>,
+    keyboard: Arc<Mutex<Keyboard>>,
 }
 
 impl Machine {
-    pub fn new(args: Arc<Args>) -> Self {
+    pub fn new(args: Arc<Args>, keyboard: Arc<Mutex<Keyboard>>) -> Self {
         let mut machine = Self {
             memory: [0; 0x1000],
             screen_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
@@ -32,6 +34,7 @@ impl Machine {
             opcode: 0,
             stack: Vec::new(),
             args,
+            keyboard,
         };
         machine.inject_font();
 
@@ -202,8 +205,20 @@ impl Machine {
                 self.v[0xF] = if had_collision { 1 } else { 0 };
                 Instruction::IDXYN(x, y, n)
             }
-            (0xE, _, 0x9, 0xE) => Instruction::IEX9E(x),
-            (0xE, _, 0xA, 0x1) => Instruction::IEXA1(x),
+            (0xE, _, 0x9, 0xE) => {
+                let key_is_pressed = self.keyboard.lock().unwrap().get_key(self.v[x] as usize);
+                if key_is_pressed {
+                    self.pc += 2;
+                }
+                Instruction::IEX9E(x)
+            }
+            (0xE, _, 0xA, 0x1) => {
+                let key_is_not_pressed = !self.keyboard.lock().unwrap().get_key(self.v[x] as usize);
+                if key_is_not_pressed {
+                    self.pc += 2;
+                }
+                Instruction::IEX9E(x)
+            }
             (0xF, _, 0x0, 0x7) => {
                 self.v[x] = self.dt;
                 Instruction::IFX07(x)
@@ -213,7 +228,7 @@ impl Machine {
                 Instruction::IFX15(x)
             }
             (0xF, _, 0x1, 0x8) => {
-                self.st = self.v[x];
+                self.dt = self.v[x];
                 Instruction::IFX18(x)
             }
             (0xF, _, 0x1, 0xE) => Instruction::IFX1E(x),

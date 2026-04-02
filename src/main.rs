@@ -1,6 +1,7 @@
 mod chip_oxide;
 mod cli;
 mod constants;
+mod keyboard;
 mod machine;
 
 use clap::Parser;
@@ -16,7 +17,12 @@ fn main() {
 
     println!("Running with {}", args.file);
 
-    let machine = Arc::new(Mutex::new(Machine::new(Arc::clone(&args))));
+    let keyboard = Arc::new(Mutex::new(keyboard::Keyboard::new()));
+
+    let machine = Arc::new(Mutex::new(Machine::new(
+        Arc::clone(&args),
+        Arc::clone(&keyboard),
+    )));
     let machine_app_copy = Arc::clone(&machine);
     let machine_timer_copy = Arc::clone(&machine);
 
@@ -49,5 +55,5 @@ fn main() {
         }
     });
 
-    chip_oxide::init(Arc::clone(&args), machine_app_copy);
+    chip_oxide::init(Arc::clone(&args), machine_app_copy, Arc::clone(&keyboard));
 }

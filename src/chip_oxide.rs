@@ -1,19 +1,20 @@
-use eframe::egui;
+use eframe::egui::{self, Key};
 use egui_extras::{Column, TableBuilder};
 use std::sync::{Arc, Mutex};
 
 use crate::Machine;
 use crate::cli::Args;
 use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::keyboard::Keyboard;
 
-pub fn init(args: Arc<Args>, chip8: Arc<Mutex<Machine>>) {
+pub fn init(args: Arc<Args>, chip8: Arc<Mutex<Machine>>, keyboard: Arc<Mutex<Keyboard>>) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "My egui App",
         native_options,
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
-            Ok(Box::new(ChipOxide::new(cc, args, chip8)))
+            Ok(Box::new(ChipOxide::new(cc, args, chip8, keyboard)))
         }),
     )
     .unwrap_or_else(|e| panic!("Failed to run native: {e}"));
@@ -21,12 +22,18 @@ pub fn init(args: Arc<Args>, chip8: Arc<Mutex<Machine>>) {
 
 struct ChipOxide {
     args: Arc<Args>,
-    chip8: Arc<Mutex<Machine>>,
+    machine: Arc<Mutex<Machine>>,
     screen_texture: egui::TextureHandle,
+    keyboard: Arc<Mutex<Keyboard>>,
 }
 
 impl ChipOxide {
-    fn new(cc: &eframe::CreationContext<'_>, args: Arc<Args>, chip8: Arc<Mutex<Machine>>) -> Self {
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        args: Arc<Args>,
+        chip8: Arc<Mutex<Machine>>,
+        keyboard: Arc<Mutex<Keyboard>>,
+    ) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_global_style.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -42,16 +49,17 @@ impl ChipOxide {
 
         Self {
             args,
-            chip8,
+            machine: chip8,
             screen_texture,
+            keyboard,
         }
     }
 
     fn render_debug_panel(&mut self, ui: &mut egui::Ui) {
         if self.args.step_mode && ui.button("Step Forward").clicked() {
-            self.chip8.lock().unwrap().cycle();
+            self.machine.lock().unwrap().cycle();
         }
-        let chip8 = self.chip8.lock().unwrap();
+        let chip8 = self.machine.lock().unwrap();
         ui.heading("CPU");
 
         ui.label(format!(
@@ -110,7 +118,7 @@ impl ChipOxide {
     }
 
     fn convert(&self) -> [u8; 2048] {
-        let chip8 = self.chip8.lock().unwrap();
+        let chip8 = self.machine.lock().unwrap();
         let mut res = [0; SCREEN_WIDTH * SCREEN_HEIGHT];
         for (i, pixel) in chip8.get_screen_buffer().iter().enumerate() {
             if *pixel {
@@ -125,12 +133,14 @@ impl ChipOxide {
 
 impl eframe::App for ChipOxide {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
-        let ctx = ui.ctx();
-        let screen_rect = ctx.content_rect();
+        let screen_rect = ui.content_rect();
         let width = screen_rect.width();
 
         // repaint so things update
-        ctx.request_repaint();
+        ui.request_repaint();
+
+        // set keyboard state
+        ui.input(|i| self.keyboard.lock().unwrap().set_keys(&i.keys_down));
 
         let size = [SCREEN_WIDTH, SCREEN_HEIGHT];
         let converted = self.convert();
