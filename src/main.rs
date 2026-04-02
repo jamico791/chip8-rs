@@ -3,6 +3,7 @@ mod cli;
 mod constants;
 mod keyboard;
 mod machine;
+mod audio;
 
 use clap::Parser;
 use std::sync::{Arc, Mutex};
@@ -11,6 +12,7 @@ use std::time::Duration;
 
 use cli::Args;
 use machine::Machine;
+
 
 fn main() {
     let args = Arc::new(Args::parse());

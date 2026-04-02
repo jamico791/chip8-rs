@@ -1,6 +1,6 @@
-use std::{sync::{Arc, Mutex}, thread, time::Duration};
+use std::sync::{Arc, Mutex};
 
-use crate::cli::Args;
+use crate::{audio::Audio, cli::Args};
 pub use crate::constants::{MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH, FONT_START};
 use crate::keyboard::Keyboard;
 
@@ -17,6 +17,7 @@ pub struct Machine {
     pub stack: Vec<u16>,
     args: Arc<Args>,
     keyboard: Arc<Mutex<Keyboard>>,
+    audio: Audio,
     waiting_for_key_release: Option<usize>,
 }
 
@@ -35,6 +36,7 @@ impl Machine {
             stack: Vec::new(),
             args,
             keyboard,
+            audio: Audio::new(220.0),
             waiting_for_key_release: None,
         };
         machine.inject_font();
@@ -348,6 +350,15 @@ impl Machine {
     pub fn cycle(&mut self) {
         self.fetch();
         self.decode_execute();
+        self.set_beep();
+    }
+
+    fn set_beep(&mut self) {
+        if self.st > 0{
+            self.audio.on();
+        } else {
+            self.audio.off();
+        }
     }
 }
 
