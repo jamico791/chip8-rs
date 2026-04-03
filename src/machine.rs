@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use eframe::egui::mutex::{Mutex, RwLock};
+use std::sync::Arc;
 
 pub use crate::constants::{FONT_START, MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::keyboard::Keyboard;
@@ -15,14 +16,14 @@ pub struct Machine {
     pub instruction: Instruction,
     pub opcode: u16,
     pub stack: Vec<u16>,
-    args: Arc<Args>,
+    args: Arc<RwLock<Args>>,
     keyboard: Arc<Mutex<Keyboard>>,
     audio: Audio,
     waiting_for_key_release: Option<usize>,
 }
 
 impl Machine {
-    pub fn new(args: Arc<Args>, keyboard: Arc<Mutex<Keyboard>>) -> Self {
+    pub fn new(args: Arc<RwLock<Args>>, keyboard: Arc<Mutex<Keyboard>>) -> Self {
         let mut machine = Self {
             memory: [0; 0x1000],
             screen_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
@@ -142,7 +143,7 @@ impl Machine {
                 Instruction::I8XY5(x, y)
             }
             (0x8, _, _, 0x6) => {
-                if !self.args.shift {
+                if !self.args.read().shift {
                     self.v[x] = self.v[y];
                 }
                 self.v[0xF] = self.v[x] & 1;
@@ -155,7 +156,7 @@ impl Machine {
                 Instruction::I8XY7(x, y)
             }
             (0x8, _, _, 0xE) => {
-                if !self.args.shift {
+                if !self.args.read().shift {
                     self.v[x] = self.v[y];
                 }
                 self.v[0xF] = (self.v[x] & 0x80) >> 7;
@@ -173,7 +174,7 @@ impl Machine {
                 Instruction::IANNN(nnn)
             }
             (0xB, _, _, _) => {
-                if self.args.jump {
+                if self.args.read().jump {
                     self.pc = nnn + self.v[x] as u16;
                     Instruction::IBXNN(x, nn)
                 } else {
@@ -209,18 +210,18 @@ impl Machine {
                 Instruction::IDXYN(x, y, n)
             }
             (0xE, _, 0x9, 0xE) => {
-                let key_is_pressed = self.keyboard.lock().unwrap().get_key(self.v[x] as usize);
+                let key_is_pressed = self.keyboard.lock().get_key(self.v[x] as usize);
                 if key_is_pressed {
                     self.pc += 2;
                 }
                 Instruction::IEX9E(x)
             }
             (0xE, _, 0xA, 0x1) => {
-                let key_is_not_pressed = !self.keyboard.lock().unwrap().get_key(self.v[x] as usize);
+                let key_is_not_pressed = !self.keyboard.lock().get_key(self.v[x] as usize);
                 if key_is_not_pressed {
                     self.pc += 2;
                 }
-                Instruction::IEX9E(x)
+                Instruction::IEXA1(x)
             }
             (0xF, _, 0x0, 0x7) => {
                 self.v[x] = self.dt;
@@ -236,15 +237,15 @@ impl Machine {
             }
             (0xF, _, 0x1, 0xE) => {
                 let sum = self.i + self.v[x] as u16;
-                if self.args.fx1e_i_overflow && sum > 0xFFF {
+                if self.args.read().fx1e_i_overflow && sum > 0xFFF {
                     self.v[0xF] = 1
                 }
                 self.i = sum & 0xFFF;
                 Instruction::IFX1E(x)
             }
             (0xF, _, 0x0, 0xA) => {
-                let kb = self.keyboard.lock().unwrap();
-                if self.args.get_key_on_release {
+                let kb = self.keyboard.lock();
+                if self.args.read().get_key_on_release {
                     match self.waiting_for_key_release {
                         Some(key_num) => {
                             if kb.get_key(key_num) {

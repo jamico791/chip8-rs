@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::{Arc, Condvar};
 
 use eframe::egui::Key;
 
@@ -40,12 +39,8 @@ impl Keyboard {
     pub fn get_pressed(&self) -> Option<usize> {
         let mut i = 0;
         while i < 16 && !self.get_key(i) {
-            i += 1; 
+            i += 1;
         }
-        if i < 16 {
-            Some(i)
-        } else {
-            None
-        }
+        if i < 16 { Some(i) } else { None }
     }
 }

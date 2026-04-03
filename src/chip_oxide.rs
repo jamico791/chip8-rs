@@ -1,13 +1,14 @@
+use eframe::egui::mutex::{Mutex, RwLock};
 use eframe::egui::{self, Key};
 use egui_extras::{Column, TableBuilder};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::Machine;
 use crate::cli::Args;
 use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::keyboard::Keyboard;
 
-pub fn init(args: Arc<Args>, chip8: Arc<Mutex<Machine>>, keyboard: Arc<Mutex<Keyboard>>) {
+pub fn init(args: Arc<RwLock<Args>>, chip8: Arc<Mutex<Machine>>, keyboard: Arc<Mutex<Keyboard>>) {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "My egui App",
@@ -21,7 +22,7 @@ pub fn init(args: Arc<Args>, chip8: Arc<Mutex<Machine>>, keyboard: Arc<Mutex<Key
 }
 
 struct ChipOxide {
-    args: Arc<Args>,
+    args: Arc<RwLock<Args>>,
     machine: Arc<Mutex<Machine>>,
     screen_texture: egui::TextureHandle,
     keyboard: Arc<Mutex<Keyboard>>,
@@ -30,7 +31,7 @@ struct ChipOxide {
 impl ChipOxide {
     fn new(
         cc: &eframe::CreationContext<'_>,
-        args: Arc<Args>,
+        args: Arc<RwLock<Args>>,
         chip8: Arc<Mutex<Machine>>,
         keyboard: Arc<Mutex<Keyboard>>,
     ) -> Self {
@@ -56,10 +57,10 @@ impl ChipOxide {
     }
 
     fn render_debug_panel(&mut self, ui: &mut egui::Ui) {
-        if self.args.step_mode && ui.button("Step Forward").clicked() {
-            self.machine.lock().unwrap().cycle();
+        if self.args.read().step_mode && ui.button("Step Forward").clicked() {
+            self.machine.lock().cycle();
         }
-        let chip8 = self.machine.lock().unwrap();
+        let chip8 = self.machine.lock();
         ui.heading("CPU");
 
         ui.label(format!(
@@ -118,7 +119,7 @@ impl ChipOxide {
     }
 
     fn convert(&self) -> [u8; 2048] {
-        let chip8 = self.machine.lock().unwrap();
+        let chip8 = self.machine.lock();
         let mut res = [0; SCREEN_WIDTH * SCREEN_HEIGHT];
         for (i, pixel) in chip8.get_screen_buffer().iter().enumerate() {
             if *pixel {
@@ -129,6 +130,22 @@ impl ChipOxide {
         }
         res
     }
+
+    fn check_keys(&mut self, ui: &mut egui::Ui) {
+        ui.input(|input| {
+            // toggle debug mode
+            if input.key_pressed(Key::CloseBracket) {
+                let is_debug = self.args.read().debug;
+                self.args.write().debug = !is_debug;
+            }
+
+            //toggle step mode
+            if input.key_pressed(Key::Quote) {
+                let is_step_mode = self.args.read().step_mode;
+                self.args.write().step_mode = !is_step_mode;
+            }
+        })
+    }
 }
 
 impl eframe::App for ChipOxide {
@@ -136,11 +153,13 @@ impl eframe::App for ChipOxide {
         let screen_rect = ui.content_rect();
         let width = screen_rect.width();
 
+        self.check_keys(ui);
+
         // repaint so things update
         ui.request_repaint();
 
         // set keyboard state
-        ui.input(|i| self.keyboard.lock().unwrap().set_keys(&i.keys_down));
+        ui.input(|i| self.keyboard.lock().set_keys(&i.keys_down));
 
         let size = [SCREEN_WIDTH, SCREEN_HEIGHT];
         let converted = self.convert();
@@ -148,7 +167,7 @@ impl eframe::App for ChipOxide {
         self.screen_texture
             .set(color_image, egui::TextureOptions::NEAREST);
 
-        if self.args.debug {
+        if self.args.read().debug {
             egui::Panel::right("debug_panel")
                 .exact_size(width * 0.3)
                 .show_inside(ui, |ui| {
