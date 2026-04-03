@@ -286,10 +286,38 @@ impl Machine {
                 self.memory[self.i as usize + 2] = ones;
                 Instruction::IFX33(x)
             }
-            (0xF, _, 0x5, 0x5) => Instruction::IFX55(x),
-            (0xF, _, 0x6, 0x5) => Instruction::IFX65(x),
+            (0xF, _, 0x5, 0x5) => {
+                if self.i as usize > MEMORY_LENGTH - x {
+                    panic!("Out of bounds memory access attempt from instruction FX55")
+                }
+                for i in 0..=x {
+                    self.memory[self.i as usize + i] = self.v[i];
+                }
+                self.increment_i_for_quirks(x as u16);
+                Instruction::IFX55(x)
+            }
+            (0xF, _, 0x6, 0x5) => {
+                if self.i as usize > MEMORY_LENGTH - x {
+                    panic!("Out of bounds memory access attempt from instruction FX65")
+                }
+                for i in 0..=x {
+                    self.v[i] = self.memory[self.i as usize + i];
+                }
+                self.increment_i_for_quirks(x as u16);
+                Instruction::IFX65(x)
+            }
             (_, _, _, _) => Instruction::None,
         };
+    }
+
+    fn increment_i_for_quirks(&mut self, x: u16) {
+        if !self.args.read().memory_leave_i_unchanged {
+            self.i = if self.args.read().memory_increment_by_x {
+                self.i + x
+            } else {
+                self.i + x + 1
+            }
+        }
     }
 
     fn flip_pixel(&mut self, x: usize, y: usize) -> bool {

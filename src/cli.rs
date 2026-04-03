@@ -35,4 +35,12 @@ pub struct Args {
     /// The number of cycles per second
     #[arg(short, long, default_value_t = 700)]
     pub cycles_per_second: u32,
+
+    /// FX55 & FX65 increment I with X if true, and with X + 1 if false
+    #[arg(long)]
+    pub memory_increment_by_x: bool,
+
+    /// FX55 & FX65 leave the I register unchanged if true, and increment it if false
+    #[arg(long)]
+    pub memory_leave_i_unchanged: bool,
 }
