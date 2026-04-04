@@ -124,19 +124,22 @@ impl Machine {
                 if !self.args.read().shift {
                     self.v[x] = self.v[y];
                 }
-                self.v[0xF] = self.v[x] & 1;
+                let v_x = self.v[x];
                 self.v[x] >>= 1;
+                self.v[0xF] = v_x & 1;
             }
             Instruction::I8XY7(x, y) => {
-                self.v[0xF] = if self.v[y] >= self.v[x] { 1 } else { 0 };
+                let v_x = self.v[x];
                 self.v[x] = self.v[y].wrapping_sub(self.v[x]);
+                self.v[0xF] = if self.v[y] >= v_x { 1 } else { 0 };
             }
             Instruction::I8XYE(x, y) => {
                 if !self.args.read().shift {
                     self.v[x] = self.v[y];
                 }
-                self.v[0xF] = (self.v[x] & 0x80) >> 7;
+                let v_x = self.v[x];
                 self.v[x] <<= 1;
+                self.v[0xF] = (v_x & 0x80) >> 7;
             }
             Instruction::I9XY0(x, y) => {
                 if self.v[x] != self.v[y] {

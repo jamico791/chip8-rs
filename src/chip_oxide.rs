@@ -205,7 +205,6 @@ impl ChipOxide {
 
                     if m.pc as usize == i {
                         row.set_selected(true);
-                        // row.response().scroll_to_me(Some(egui::Align::Center));
                     }
 
                     row.col(|ui| {
@@ -245,7 +244,7 @@ impl ChipOxide {
                     body.rows(20.0, stack.len(), |mut row| {
                         let i = row.index();
                         row.col(|ui| {
-                            ui.monospace(format!("{i}"));
+                            ui.monospace(format!("{}", i + 1));
                         });
                         row.col(|ui| {
                             ui.monospace(format!("{:#05X}", stack.get(i).unwrap()));
