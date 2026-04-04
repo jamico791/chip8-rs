@@ -2,6 +2,7 @@ mod audio;
 mod chip_oxide;
 mod cli;
 mod constants;
+mod instruction;
 mod keyboard;
 mod machine;
 

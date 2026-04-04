@@ -6,8 +6,8 @@ use std::sync::Arc;
 use crate::Machine;
 use crate::cli::Args;
 use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use crate::instruction::Instruction;
 use crate::keyboard::Keyboard;
-use crate::machine::Instruction;
 
 pub fn init(args: Arc<RwLock<Args>>, chip8: Arc<Mutex<Machine>>, keyboard: Arc<Mutex<Keyboard>>) {
     let native_options = eframe::NativeOptions::default();
@@ -91,6 +91,7 @@ impl ChipOxide {
 
     fn render_registers(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
+            ui.heading("Registers");
             TableBuilder::new(ui)
                 .id_salt("registers")
                 .striped(true)
@@ -119,7 +120,7 @@ impl ChipOxide {
                             0..16 => {
                                 for j in 0..2 {
                                     row.col(|ui| {
-                                        ui.monospace(format!("V{:X}", i + j));
+                                        ui.monospace(format!("v{:X}", i + j));
                                     });
                                     row.col(|ui| {
                                         ui.monospace(format!("{:#04X}", m.v[i + j]));
@@ -128,13 +129,13 @@ impl ChipOxide {
                             }
                             16 => {
                                 row.col(|ui| {
-                                    ui.monospace("DT");
+                                    ui.monospace("delay");
                                 });
                                 row.col(|ui| {
                                     ui.monospace(format!("{:#04X}", m.dt));
                                 });
                                 row.col(|ui| {
-                                    ui.monospace("ST");
+                                    ui.monospace("buzzer");
                                 });
                                 row.col(|ui| {
                                     ui.monospace(format!("{:#04X}", m.st));
@@ -142,13 +143,13 @@ impl ChipOxide {
                             }
                             18 => {
                                 row.col(|ui| {
-                                    ui.monospace("I");
+                                    ui.monospace("i");
                                 });
                                 row.col(|ui| {
                                     ui.monospace(format!("{:#05X}", m.i));
                                 });
                                 row.col(|ui| {
-                                    ui.monospace("PC");
+                                    ui.monospace("pc");
                                 });
                                 row.col(|ui| {
                                     ui.monospace(format!("{:#05X}", m.pc));
@@ -159,26 +160,34 @@ impl ChipOxide {
                             }
                         }
                     });
-                })
+                });
         });
     }
 
     fn render_memory(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Memory");
         let table = TableBuilder::new(ui)
             .column(Column::auto())
             .column(Column::auto())
             .column(Column::remainder())
             .resizable(false)
             .striped(true)
+            .animate_scrolling(false);
+
+        let table = table.scroll_to_row(
+            self.machine.lock().pc.div_ceil(2) as usize,
+            Some(egui::Align::Center),
+        );
+        table
             .header(20.0, |mut header| {
                 header.col(|ui| {
-                    ui.label("Address");
+                    ui.strong("Address");
                 });
                 header.col(|ui| {
-                    ui.label("Hex");
+                    ui.strong("Hex");
                 });
                 header.col(|ui| {
-                    ui.label("Instruction");
+                    ui.strong("Instruction");
                 });
             })
             .body(|body| {
@@ -213,20 +222,64 @@ impl ChipOxide {
             });
     }
 
+    fn render_stack(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            ui.heading("Stack");
+            TableBuilder::new(ui)
+                .id_salt("stack")
+                .column(Column::auto())
+                .column(Column::remainder())
+                .resizable(false)
+                .header(20.0, |mut header| {
+                    header.col(|ui| {
+                        ui.strong("Level");
+                    });
+                    header.col(|ui| {
+                        ui.strong("Address");
+                    });
+                })
+                .body(|body| {
+                    let stack = &self.machine.lock().stack;
+                    body.rows(20.0, stack.len(), |mut row| {
+                        let i = row.index();
+                        row.col(|ui| {
+                            ui.monospace(format!("{i}"));
+                        });
+                        row.col(|ui| {
+                            ui.monospace(format!("{:#05X}", stack.get(i).unwrap()));
+                        });
+                    });
+                });
+        });
+    }
+
     fn render_debug_panel(&mut self, ui: &mut egui::Ui) {
-        if self.args.read().step_mode && ui.button("Step Forward").clicked() {
-            self.machine.lock().cycle();
-        }
-        self.render_registers(ui);
-        self.render_memory(ui);
+        let screen_rect = ui.content_rect();
+        let width = screen_rect.width();
+        let height = screen_rect.height();
+
+        egui::Panel::left("debug_panel")
+            .exact_size(width * 0.3)
+            .show_inside(ui, |ui| {
+                if self.args.read().step_mode && ui.button("Step Forward").clicked() {
+                    self.machine.lock().cycle();
+                }
+                self.render_memory(ui);
+            });
+
+        egui::Panel::bottom("bottom_panel")
+            .exact_size(height * 0.3)
+            .show_inside(ui, |ui| {
+                ui.horizontal(|ui| {
+                    self.render_registers(ui);
+                    self.render_stack(ui);
+                });
+            });
     }
 }
 
 impl eframe::App for ChipOxide {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
-        let screen_rect = ui.content_rect();
-        let width = screen_rect.width();
-
         self.check_keys(ui);
 
         // repaint so things update
@@ -242,11 +295,7 @@ impl eframe::App for ChipOxide {
             .set(color_image, egui::TextureOptions::NEAREST);
 
         if self.args.read().debug {
-            egui::Panel::left("debug_panel")
-                .exact_size(width * 0.3)
-                .show_inside(ui, |ui| {
-                    self.render_debug_panel(ui);
-                });
+            self.render_debug_panel(ui);
         }
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
