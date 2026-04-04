@@ -7,6 +7,7 @@ use crate::Machine;
 use crate::cli::Args;
 use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::keyboard::Keyboard;
+use crate::machine::Instruction;
 
 pub fn init(args: Arc<RwLock<Args>>, chip8: Arc<Mutex<Machine>>, keyboard: Arc<Mutex<Keyboard>>) {
     let native_options = eframe::NativeOptions::default();
@@ -56,68 +57,6 @@ impl ChipOxide {
         }
     }
 
-    fn render_debug_panel(&mut self, ui: &mut egui::Ui) {
-        if self.args.read().step_mode && ui.button("Step Forward").clicked() {
-            self.machine.lock().cycle();
-        }
-        let chip8 = self.machine.lock();
-        ui.heading("CPU");
-
-        ui.label(format!(
-            "I: {:03X} DT: {:02X} ST: {:02X}",
-            chip8.i, chip8.dt, chip8.st
-        ));
-        ui.label(format!(
-            "PC: {:03X} Opcode: {:04X} Instruction: {}",
-            chip8.pc, chip8.opcode, chip8.instruction
-        ));
-
-        for i in (0..chip8.v.len()).step_by(2) {
-            ui.label(format!(
-                "V{:X}: {:02X} V{:X}: {:02X}",
-                i,
-                chip8.v[i],
-                i + 1,
-                chip8.v[i + 1]
-            ));
-        }
-
-        ui.collapsing("Memory", |ui| {
-            let memory_column_width = 16;
-
-            TableBuilder::new(ui)
-                .column(Column::auto())
-                .columns(Column::auto(), memory_column_width)
-                .header(10.0, |mut header| {
-                    header.col(|ui| {
-                        ui.label(" ");
-                    });
-                    for i in 0..memory_column_width {
-                        header.col(|ui| {
-                            ui.label(format! {"{i:02X}"});
-                        });
-                    }
-                })
-                .body(|mut body| {
-                    let row_count = chip8.get_memory().len() / memory_column_width;
-
-                    for i in 0..row_count {
-                        body.row(10.0, |mut row| {
-                            row.col(|ui| {
-                                ui.label(format!("{:03X}", i * 16));
-                            });
-                            for j in 0..memory_column_width {
-                                let idx = i * memory_column_width + j;
-                                row.col(|ui| {
-                                    ui.label(format!("{:02X}", chip8.get_memory()[idx]));
-                                });
-                            }
-                        });
-                    }
-                });
-        });
-    }
-
     fn convert(&self) -> [u8; 2048] {
         let chip8 = self.machine.lock();
         let mut res = [0; SCREEN_WIDTH * SCREEN_HEIGHT];
@@ -130,7 +69,10 @@ impl ChipOxide {
         }
         res
     }
+}
 
+// Implement debug related functions
+impl ChipOxide {
     fn check_keys(&mut self, ui: &mut egui::Ui) {
         ui.input(|input| {
             // toggle debug mode
@@ -145,6 +87,138 @@ impl ChipOxide {
                 self.args.write().step_mode = !is_step_mode;
             }
         })
+    }
+
+    fn render_registers(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            TableBuilder::new(ui)
+                .id_salt("registers")
+                .striped(true)
+                .resizable(false)
+                .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                .column(Column::auto())
+                .column(Column::remainder())
+                .column(Column::auto())
+                .column(Column::remainder())
+                .header(20.0, |mut header| {
+                    for _ in 0..2 {
+                        header.col(|ui| {
+                            ui.strong("Register");
+                        });
+                        header.col(|ui| {
+                            ui.strong("Value");
+                        });
+                    }
+                })
+                .body(|body| {
+                    let m = self.machine.lock();
+                    let rows = (m.v.len() + 4).div_ceil(2);
+                    body.rows(20.0, rows, |mut row| {
+                        let i = row.index() * 2;
+                        match i {
+                            0..16 => {
+                                for j in 0..2 {
+                                    row.col(|ui| {
+                                        ui.monospace(format!("V{:X}", i + j));
+                                    });
+                                    row.col(|ui| {
+                                        ui.monospace(format!("{:#04X}", m.v[i + j]));
+                                    });
+                                }
+                            }
+                            16 => {
+                                row.col(|ui| {
+                                    ui.monospace("DT");
+                                });
+                                row.col(|ui| {
+                                    ui.monospace(format!("{:#04X}", m.dt));
+                                });
+                                row.col(|ui| {
+                                    ui.monospace("ST");
+                                });
+                                row.col(|ui| {
+                                    ui.monospace(format!("{:#04X}", m.st));
+                                });
+                            }
+                            18 => {
+                                row.col(|ui| {
+                                    ui.monospace("I");
+                                });
+                                row.col(|ui| {
+                                    ui.monospace(format!("{:#05X}", m.i));
+                                });
+                                row.col(|ui| {
+                                    ui.monospace("PC");
+                                });
+                                row.col(|ui| {
+                                    ui.monospace(format!("{:#05X}", m.pc));
+                                });
+                            }
+                            _ => {
+                                panic!("Invalid debug register");
+                            }
+                        }
+                    });
+                })
+        });
+    }
+
+    fn render_memory(&mut self, ui: &mut egui::Ui) {
+        let table = TableBuilder::new(ui)
+            .column(Column::auto())
+            .column(Column::auto())
+            .column(Column::remainder())
+            .resizable(false)
+            .striped(true)
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.label("Address");
+                });
+                header.col(|ui| {
+                    ui.label("Hex");
+                });
+                header.col(|ui| {
+                    ui.label("Instruction");
+                });
+            })
+            .body(|body| {
+                let m = self.machine.lock();
+                let rows = m.get_memory().len().div_ceil(2);
+
+                body.rows(10.0, rows, |mut row| {
+                    let i = row.index() * 2;
+
+                    let left_byte = *m.memory.get(i).unwrap_or(&0) as u16;
+                    let right_byte = *m.memory.get(i + 1).unwrap_or(&0) as u16;
+                    let opcode = (left_byte << 8) | right_byte;
+
+                    if m.pc as usize == i {
+                        row.set_selected(true);
+                        // row.response().scroll_to_me(Some(egui::Align::Center));
+                    }
+
+                    row.col(|ui| {
+                        ui.monospace(format!("{:#05X}", i));
+                    });
+                    row.col(|ui| {
+                        ui.monospace(format!("{:#06X}", opcode));
+                    });
+                    row.col(|ui| {
+                        ui.monospace(format!(
+                            "{}",
+                            Instruction::new(opcode, self.args.read().jump)
+                        ));
+                    });
+                });
+            });
+    }
+
+    fn render_debug_panel(&mut self, ui: &mut egui::Ui) {
+        if self.args.read().step_mode && ui.button("Step Forward").clicked() {
+            self.machine.lock().cycle();
+        }
+        self.render_registers(ui);
+        self.render_memory(ui);
     }
 }
 
@@ -168,7 +242,7 @@ impl eframe::App for ChipOxide {
             .set(color_image, egui::TextureOptions::NEAREST);
 
         if self.args.read().debug {
-            egui::Panel::right("debug_panel")
+            egui::Panel::left("debug_panel")
                 .exact_size(width * 0.3)
                 .show_inside(ui, |ui| {
                     self.render_debug_panel(ui);

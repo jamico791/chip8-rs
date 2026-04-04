@@ -54,140 +54,107 @@ impl Machine {
         self.pc += 2;
     }
 
-    pub fn decode_execute(&mut self) {
-        let x: usize = ((self.opcode & 0xF00) >> 8) as usize;
-        let y: usize = ((self.opcode & 0xF0) >> 4) as usize;
-        let n: u8 = (self.opcode & 0xF) as u8;
-        let nn: u8 = (self.opcode & 0xFF) as u8;
-        let nnn: u16 = self.opcode & 0xFFF;
+    fn decode(&mut self) {
+        self.instruction = Instruction::new(self.opcode, self.args.read().jump);
+    }
 
-        let tup = (
-            (self.opcode & 0xF000) >> 12,
-            (self.opcode & 0x0F00) >> 8,
-            (self.opcode & 0x00F0) >> 4,
-            self.opcode & 0x000F,
-        );
-
-        self.instruction = match tup {
-            (0x0, 0x0, 0xE, 0x0) => {
+    pub fn execute(&mut self) {
+        match self.instruction {
+            Instruction::I00E0 => {
                 self.screen_buffer = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
-                Instruction::I00E0
             }
-            (0x0, 0x0, 0xE, 0xE) => {
+            Instruction::I00EE => {
                 self.pc = self
                     .stack
                     .pop()
                     .unwrap_or_else(|| panic!("Error when popping subroutine off stack"));
-                Instruction::I00EE
             }
-            (0x1, _, _, _) => {
+            Instruction::I1NNN(nnn) => {
                 self.pc = nnn;
-                Instruction::I1NNN(nnn)
             }
-            (0x2, _, _, _) => {
+            Instruction::I2NNN(nnn) => {
                 self.stack.push(self.pc);
                 self.pc = nnn;
-                Instruction::I2NNN(nnn)
             }
-            (0x3, _, _, _) => {
+            Instruction::I3XNN(x, nn) => {
                 if self.v[x] == nn {
                     self.pc += 2;
                 }
-                Instruction::I3XNN(x, nn)
             }
-            (0x4, _, _, _) => {
+            Instruction::I4XNN(x, nn) => {
                 if self.v[x] != nn {
                     self.pc += 2;
                 }
-                Instruction::I4XNN(x, nn)
             }
-            (0x5, _, _, 0x0) => {
+            Instruction::I5XY0(x, y) => {
                 if self.v[x] == self.v[y] {
                     self.pc += 2;
                 }
-                Instruction::I5XY0(x, y)
             }
-            (0x6, _, _, _) => {
+            Instruction::I6XNN(x, nn) => {
                 self.v[x] = nn;
-                Instruction::I6XNN(x, nn)
             }
-            (0x7, _, _, _) => {
+            Instruction::I7XNN(x, nn) => {
                 self.v[x] = self.v[x].wrapping_add(nn);
-                Instruction::I7XNN(x, nn)
             }
-            (0x8, _, _, 0x0) => {
+            Instruction::I8XY0(x, y) => {
                 self.v[x] = self.v[y];
-                Instruction::I8XY0(x, y)
             }
-            (0x8, _, _, 0x1) => {
+            Instruction::I8XY1(x, y) => {
                 self.v[x] |= self.v[y];
-                Instruction::I8XY1(x, y)
             }
-            (0x8, _, _, 0x2) => {
+            Instruction::I8XY2(x, y) => {
                 self.v[x] &= self.v[y];
-                Instruction::I8XY2(x, y)
             }
-            (0x8, _, _, 0x3) => {
+            Instruction::I8XY3(x, y) => {
                 self.v[x] ^= self.v[y];
-                Instruction::I8XY3(x, y)
             }
-            (0x8, _, _, 0x4) => {
+            Instruction::I8XY4(x, y) => {
                 let (result, did_overflow) = self.v[x].overflowing_add(self.v[y]);
                 self.v[x] = result;
-                self.v[y] = if did_overflow { 1 } else { 0 };
-                Instruction::I8XY4(x, y)
+                self.v[0xF] = if did_overflow { 1 } else { 0 };
             }
-            (0x8, _, _, 0x5) => {
+            Instruction::I8XY5(x, y) => {
                 self.v[0xF] = if self.v[x] >= self.v[y] { 1 } else { 0 };
                 self.v[x] = self.v[x].wrapping_sub(self.v[y]);
-                Instruction::I8XY5(x, y)
             }
-            (0x8, _, _, 0x6) => {
+            Instruction::I8XY6(x, y) => {
                 if !self.args.read().shift {
                     self.v[x] = self.v[y];
                 }
                 self.v[0xF] = self.v[x] & 1;
                 self.v[x] >>= 1;
-                Instruction::I8XY6(x, y)
             }
-            (0x8, _, _, 0x7) => {
+            Instruction::I8XY7(x, y) => {
                 self.v[0xF] = if self.v[y] >= self.v[x] { 1 } else { 0 };
                 self.v[x] = self.v[y].wrapping_sub(self.v[x]);
-                Instruction::I8XY7(x, y)
             }
-            (0x8, _, _, 0xE) => {
+            Instruction::I8XYE(x, y) => {
                 if !self.args.read().shift {
                     self.v[x] = self.v[y];
                 }
                 self.v[0xF] = (self.v[x] & 0x80) >> 7;
                 self.v[x] <<= 1;
-                Instruction::I8XYE(x, y)
             }
-            (0x9, _, _, 0x0) => {
+            Instruction::I9XY0(x, y) => {
                 if self.v[x] != self.v[y] {
                     self.pc += 2;
                 }
-                Instruction::I9XY0(x, y)
             }
-            (0xA, _, _, _) => {
+            Instruction::IANNN(nnn) => {
                 self.i = nnn;
-                Instruction::IANNN(nnn)
             }
-            (0xB, _, _, _) => {
-                if self.args.read().jump {
-                    self.pc = nnn + self.v[x] as u16;
-                    Instruction::IBXNN(x, nn)
-                } else {
-                    self.pc = nnn + self.v[0] as u16;
-                    Instruction::IBNNN(nnn)
-                }
+            Instruction::IBXNN(x, _, nnn) => {
+                self.pc = nnn + self.v[x] as u16;
             }
-            (0xC, _, _, _) => {
+            Instruction::IBNNN(nnn) => {
+                self.pc = nnn + self.v[0] as u16;
+            }
+            Instruction::ICXNN(x, nn) => {
                 let r: u8 = rand::random();
                 self.v[x] = r & nn;
-                Instruction::ICXNN(x, nn)
             }
-            (0xD, _, _, _) => {
+            Instruction::IDXYN(x, y, n) => {
                 let x_coord = (self.v[x] as usize) % SCREEN_WIDTH;
                 let y_coord = (self.v[y] as usize) % SCREEN_HEIGHT;
                 let sprite_vec = self.read_vector(self.i, n as u16);
@@ -207,43 +174,36 @@ impl Machine {
                     }
                 }
                 self.v[0xF] = if had_collision { 1 } else { 0 };
-                Instruction::IDXYN(x, y, n)
             }
-            (0xE, _, 0x9, 0xE) => {
+            Instruction::IEX9E(x) => {
                 let key_is_pressed = self.keyboard.lock().get_key(self.v[x] as usize);
                 if key_is_pressed {
                     self.pc += 2;
                 }
-                Instruction::IEX9E(x)
             }
-            (0xE, _, 0xA, 0x1) => {
+            Instruction::IEXA1(x) => {
                 let key_is_not_pressed = !self.keyboard.lock().get_key(self.v[x] as usize);
                 if key_is_not_pressed {
                     self.pc += 2;
                 }
-                Instruction::IEXA1(x)
             }
-            (0xF, _, 0x0, 0x7) => {
+            Instruction::IFX07(x) => {
                 self.v[x] = self.dt;
-                Instruction::IFX07(x)
             }
-            (0xF, _, 0x1, 0x5) => {
+            Instruction::IFX15(x) => {
                 self.dt = self.v[x];
-                Instruction::IFX15(x)
             }
-            (0xF, _, 0x1, 0x8) => {
+            Instruction::IFX18(x) => {
                 self.st = self.v[x];
-                Instruction::IFX18(x)
             }
-            (0xF, _, 0x1, 0xE) => {
+            Instruction::IFX1E(x) => {
                 let sum = self.i + self.v[x] as u16;
                 if self.args.read().fx1e_i_overflow && sum > 0xFFF {
                     self.v[0xF] = 1
                 }
                 self.i = sum & 0xFFF;
-                Instruction::IFX1E(x)
             }
-            (0xF, _, 0x0, 0xA) => {
+            Instruction::IFX0A(x) => {
                 let kb = self.keyboard.lock();
                 if self.args.read().get_key_on_release {
                     match self.waiting_for_key_release {
@@ -267,13 +227,11 @@ impl Machine {
                         self.pc -= 2;
                     }
                 }
-                Instruction::IFX0A(x)
             }
-            (0xF, _, 0x2, 0x9) => {
+            Instruction::IFX29(x) => {
                 self.i = (FONT_START + (self.v[x] as usize * 5)) as u16;
-                Instruction::IFX29(x)
             }
-            (0xF, _, 0x3, 0x3) => {
+            Instruction::IFX33(x) => {
                 if self.i >= 0xFFE {
                     panic!("Out of bounds memory access attempt from instruction FX33")
                 }
@@ -284,9 +242,8 @@ impl Machine {
                 self.memory[self.i as usize] = hundreds;
                 self.memory[self.i as usize + 1] = tens;
                 self.memory[self.i as usize + 2] = ones;
-                Instruction::IFX33(x)
             }
-            (0xF, _, 0x5, 0x5) => {
+            Instruction::IFX55(x) => {
                 if self.i as usize > MEMORY_LENGTH - x {
                     panic!("Out of bounds memory access attempt from instruction FX55")
                 }
@@ -294,9 +251,8 @@ impl Machine {
                     self.memory[self.i as usize + i] = self.v[i];
                 }
                 self.increment_i_for_quirks(x as u16);
-                Instruction::IFX55(x)
             }
-            (0xF, _, 0x6, 0x5) => {
+            Instruction::IFX65(x) => {
                 if self.i as usize > MEMORY_LENGTH - x {
                     panic!("Out of bounds memory access attempt from instruction FX65")
                 }
@@ -304,9 +260,8 @@ impl Machine {
                     self.v[i] = self.memory[self.i as usize + i];
                 }
                 self.increment_i_for_quirks(x as u16);
-                Instruction::IFX65(x)
             }
-            (_, _, _, _) => Instruction::None,
+            Instruction::None => panic!("Invalid instruction"),
         };
     }
 
@@ -389,7 +344,8 @@ impl Machine {
 
     pub fn cycle(&mut self) {
         self.fetch();
-        self.decode_execute();
+        self.decode();
+        self.execute();
         self.set_beep();
     }
 
@@ -424,7 +380,7 @@ pub enum Instruction {
     I8XYE(usize, usize),
     I9XY0(usize, usize),
     IANNN(u16),
-    IBXNN(usize, u8),
+    IBXNN(usize, u8, u16),
     IBNNN(u16),
     ICXNN(usize, u8),
     IDXYN(usize, usize, u8),
@@ -440,6 +396,67 @@ pub enum Instruction {
     IFX55(usize),
     IFX65(usize),
     None,
+}
+
+impl Instruction {
+    pub fn new(opcode: u16, jump: bool) -> Instruction {
+        let x: usize = ((opcode & 0xF00) >> 8) as usize;
+        let y: usize = ((opcode & 0xF0) >> 4) as usize;
+        let n: u8 = (opcode & 0xF) as u8;
+        let nn: u8 = (opcode & 0xFF) as u8;
+        let nnn: u16 = opcode & 0xFFF;
+
+        let tup = (
+            (opcode & 0xF000) >> 12,
+            (opcode & 0x0F00) >> 8,
+            (opcode & 0x00F0) >> 4,
+            opcode & 0x000F,
+        );
+
+        match tup {
+            (0x0, 0x0, 0xE, 0x0) => Instruction::I00E0,
+            (0x0, 0x0, 0xE, 0xE) => Instruction::I00EE,
+            (0x1, _, _, _) => Instruction::I1NNN(nnn),
+            (0x2, _, _, _) => Instruction::I2NNN(nnn),
+            (0x3, _, _, _) => Instruction::I3XNN(x, nn),
+            (0x4, _, _, _) => Instruction::I4XNN(x, nn),
+            (0x5, _, _, 0x0) => Instruction::I5XY0(x, y),
+            (0x6, _, _, _) => Instruction::I6XNN(x, nn),
+            (0x7, _, _, _) => Instruction::I7XNN(x, nn),
+            (0x8, _, _, 0x0) => Instruction::I8XY0(x, y),
+            (0x8, _, _, 0x1) => Instruction::I8XY1(x, y),
+            (0x8, _, _, 0x2) => Instruction::I8XY2(x, y),
+            (0x8, _, _, 0x3) => Instruction::I8XY3(x, y),
+            (0x8, _, _, 0x4) => Instruction::I8XY4(x, y),
+            (0x8, _, _, 0x5) => Instruction::I8XY5(x, y),
+            (0x8, _, _, 0x6) => Instruction::I8XY6(x, y),
+            (0x8, _, _, 0x7) => Instruction::I8XY7(x, y),
+            (0x8, _, _, 0xE) => Instruction::I8XYE(x, y),
+            (0x9, _, _, 0x0) => Instruction::I9XY0(x, y),
+            (0xA, _, _, _) => Instruction::IANNN(nnn),
+            (0xB, _, _, _) => {
+                if jump {
+                    Instruction::IBXNN(x, nn, nnn)
+                } else {
+                    Instruction::IBNNN(nnn)
+                }
+            }
+            (0xC, _, _, _) => Instruction::ICXNN(x, nn),
+            (0xD, _, _, _) => Instruction::IDXYN(x, y, n),
+            (0xE, _, 0x9, 0xE) => Instruction::IEX9E(x),
+            (0xE, _, 0xA, 0x1) => Instruction::IEXA1(x),
+            (0xF, _, 0x0, 0x7) => Instruction::IFX07(x),
+            (0xF, _, 0x1, 0x5) => Instruction::IFX15(x),
+            (0xF, _, 0x1, 0x8) => Instruction::IFX18(x),
+            (0xF, _, 0x1, 0xE) => Instruction::IFX1E(x),
+            (0xF, _, 0x0, 0xA) => Instruction::IFX0A(x),
+            (0xF, _, 0x2, 0x9) => Instruction::IFX29(x),
+            (0xF, _, 0x3, 0x3) => Instruction::IFX33(x),
+            (0xF, _, 0x5, 0x5) => Instruction::IFX55(x),
+            (0xF, _, 0x6, 0x5) => Instruction::IFX65(x),
+            (_, _, _, _) => Instruction::None,
+        }
+    }
 }
 
 impl std::fmt::Display for Instruction {
@@ -465,7 +482,7 @@ impl std::fmt::Display for Instruction {
             Instruction::I8XYE(x, y) => write!(f, "SHL V{x:X}, V{y:X}"),
             Instruction::I9XY0(x, y) => write!(f, "SNE V{x:X}, V{y:X}"),
             Instruction::IANNN(nnn) => write!(f, "LD I, {nnn:03X}"),
-            Instruction::IBXNN(x, nn) => write!(f, "JP V{x:X} + {x:X}{nn:02X}"),
+            Instruction::IBXNN(x, _, nnn) => write!(f, "JP V{x:X} + {nnn:03X}"),
             Instruction::IBNNN(nnn) => write!(f, "JP V0 + {nnn:03X}"),
             Instruction::ICXNN(x, nn) => write!(f, "RND V{x:X}, {nn:02X}"),
             Instruction::IDXYN(x, y, n) => write!(f, "DRW V{x:X}, V{y:X}, {n}"),

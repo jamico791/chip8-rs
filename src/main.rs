@@ -43,7 +43,7 @@ fn main() {
                     c.st -= 1;
                 }
             }
-            thread::sleep(Duration::from_nanos(16_670_000));
+            thread::sleep(Duration::from_nanos(16_666_667));
         }
     });
 
