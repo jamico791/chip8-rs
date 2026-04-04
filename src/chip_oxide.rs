@@ -90,12 +90,14 @@ impl ChipOxide {
     }
 
     fn render_registers(&mut self, ui: &mut egui::Ui) {
+        let height = ui.content_rect().height();
         ui.vertical(|ui| {
             ui.heading("Registers");
             TableBuilder::new(ui)
                 .id_salt("registers")
                 .striped(true)
                 .resizable(false)
+                .min_scrolled_height(height)
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                 .column(Column::auto())
                 .column(Column::remainder())
@@ -259,7 +261,7 @@ impl ChipOxide {
         let height = screen_rect.height();
 
         egui::Panel::left("debug_panel")
-            .exact_size(width * 0.3)
+            .exact_size(300.0)
             .show_inside(ui, |ui| {
                 if self.args.read().step_mode && ui.button("Step Forward").clicked() {
                     self.machine.lock().cycle();
@@ -268,11 +270,16 @@ impl ChipOxide {
             });
 
         egui::Panel::bottom("bottom_panel")
-            .exact_size(height * 0.3)
+            .exact_size(300.0)
+            .resizable(false)
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
-                    self.render_registers(ui);
-                    self.render_stack(ui);
+                    ui.allocate_ui(egui::vec2(ui.available_width() / 2.0, ui.available_height()), |ui| {
+                        self.render_registers(ui);
+                    });
+                    ui.allocate_ui(egui::vec2(ui.available_width() / 2.0, ui.available_height()), |ui| {
+                        self.render_stack(ui);
+                    });
                 });
             });
     }
