@@ -6,4 +6,5 @@ pub const SCREEN_WIDTH: usize = 64;
 pub const SCREEN_HEIGHT: usize = 32;
 /// The start index of the font characters
 pub const FONT_START: usize = 0x050;
-
+/// The target frame time in seconds
+pub const FRAME_TIME: f64 = 1.0 / 60.0;

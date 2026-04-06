@@ -1,5 +1,5 @@
-use eframe::egui::mutex::{Mutex, RwLock};
-use std::sync::Arc;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::constants::{FONT_START, MEMORY_LENGTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 use crate::instruction::Instruction;
@@ -8,7 +8,8 @@ use crate::{audio::Audio, cli::Args};
 
 pub struct Machine {
     pub memory: [u8; 0x1000], // RAM
-    pub screen_buffer: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
+    pub front_buffer: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
+    pub back_buffer: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
     pub v: [u8; 0x10], // General purpose registers
     pub pc: u16,       // Program counter
     pub i: u16,        // Address register
@@ -17,17 +18,18 @@ pub struct Machine {
     pub instruction: Instruction,
     pub opcode: u16,
     pub stack: Vec<u16>,
-    args: Arc<RwLock<Args>>,
-    keyboard: Arc<Mutex<Keyboard>>,
+    args: Rc<RefCell<Args>>,
+    keyboard: Rc<RefCell<Keyboard>>,
     audio: Audio,
     waiting_for_key_release: Option<usize>,
 }
 
 impl Machine {
-    pub fn new(args: Arc<RwLock<Args>>, keyboard: Arc<Mutex<Keyboard>>) -> Self {
+    pub fn new(args: Rc<RefCell<Args>>, keyboard: Rc<RefCell<Keyboard>>) -> Self {
         let mut machine = Self {
             memory: [0; 0x1000],
-            screen_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
+            front_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
+            back_buffer: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
             v: [0; 0x10],
             pc: 0x200,
             i: 0,
@@ -56,13 +58,13 @@ impl Machine {
     }
 
     fn decode(&mut self) {
-        self.instruction = Instruction::new(self.opcode, self.args.read().jump);
+        self.instruction = Instruction::new(self.opcode, self.args.borrow().jump);
     }
 
     pub fn execute(&mut self) {
         match self.instruction {
             Instruction::I00E0 => {
-                self.screen_buffer = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+                self.back_buffer = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
             }
             Instruction::I00EE => {
                 self.pc = self
@@ -121,7 +123,7 @@ impl Machine {
                 self.v[0xF] = if v_x >= self.v[y] { 1 } else { 0 };
             }
             Instruction::I8XY6(x, y) => {
-                if !self.args.read().shift {
+                if !self.args.borrow().shift {
                     self.v[x] = self.v[y];
                 }
                 let v_x = self.v[x];
@@ -134,7 +136,7 @@ impl Machine {
                 self.v[0xF] = if self.v[y] >= v_x { 1 } else { 0 };
             }
             Instruction::I8XYE(x, y) => {
-                if !self.args.read().shift {
+                if !self.args.borrow().shift {
                     self.v[x] = self.v[y];
                 }
                 let v_x = self.v[x];
@@ -181,13 +183,13 @@ impl Machine {
                 self.v[0xF] = if had_collision { 1 } else { 0 };
             }
             Instruction::IEX9E(x) => {
-                let key_is_pressed = self.keyboard.lock().get_key(self.v[x] as usize);
+                let key_is_pressed = self.keyboard.borrow().get_key(self.v[x] as usize);
                 if key_is_pressed {
                     self.pc += 2;
                 }
             }
             Instruction::IEXA1(x) => {
-                let key_is_not_pressed = !self.keyboard.lock().get_key(self.v[x] as usize);
+                let key_is_not_pressed = !self.keyboard.borrow().get_key(self.v[x] as usize);
                 if key_is_not_pressed {
                     self.pc += 2;
                 }
@@ -203,14 +205,14 @@ impl Machine {
             }
             Instruction::IFX1E(x) => {
                 let sum = self.i + self.v[x] as u16;
-                if self.args.read().fx1e_i_overflow && sum > 0xFFF {
+                if self.args.borrow().fx1e_i_overflow && sum > 0xFFF {
                     self.v[0xF] = 1
                 }
                 self.i = sum & 0xFFF;
             }
             Instruction::IFX0A(x) => {
-                let kb = self.keyboard.lock();
-                if self.args.read().get_key_on_release {
+                let kb = self.keyboard.borrow_mut();
+                if self.args.borrow().get_key_on_release {
                     match self.waiting_for_key_release {
                         Some(key_num) => {
                             if kb.get_key(key_num) {
@@ -271,8 +273,8 @@ impl Machine {
     }
 
     fn increment_i_for_quirks(&mut self, x: u16) {
-        if !self.args.read().memory_leave_i_unchanged {
-            self.i = if self.args.read().memory_increment_by_x {
+        if !self.args.borrow().memory_leave_i_unchanged {
+            self.i = if self.args.borrow().memory_increment_by_x {
                 self.i + x
             } else {
                 self.i + x + 1
@@ -282,8 +284,8 @@ impl Machine {
 
     fn flip_pixel(&mut self, x: usize, y: usize) -> bool {
         let i = (y * SCREEN_WIDTH) + x;
-        self.screen_buffer[i] = !self.screen_buffer[i];
-        self.screen_buffer[i]
+        self.back_buffer[i] = !self.back_buffer[i];
+        self.back_buffer[i]
     }
 
     pub fn read_vector(&self, start: u16, length: u16) -> Vec<u8> {
@@ -339,12 +341,26 @@ impl Machine {
         self.write_vector(buffer, 0x200);
     }
 
-    pub fn get_screen_buffer(&self) -> &[bool; SCREEN_WIDTH * SCREEN_HEIGHT] {
-        &self.screen_buffer
+    pub fn get_display_buffer(&self) -> &[bool; SCREEN_WIDTH * SCREEN_HEIGHT] {
+        &self.front_buffer
+    }
+
+    /// Copy back buffer to front buffer, not actually swapping anything
+    pub fn swap_buffers(&mut self) {
+        self.front_buffer.copy_from_slice(&self.back_buffer);
     }
 
     pub fn get_memory(&self) -> &[u8; MEMORY_LENGTH] {
         &self.memory
+    }
+
+    pub fn decrement_timers(&mut self) {
+        if self.dt > 0 {
+            self.dt -= 1;
+        }
+        if self.st > 0 {
+            self.st -= 1;
+        }
     }
 
     pub fn cycle(&mut self) {

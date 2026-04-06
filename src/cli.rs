@@ -32,9 +32,9 @@ pub struct Args {
     #[arg(long)]
     pub get_key_on_release: bool,
 
-    /// The number of cycles per second
-    #[arg(short, long, default_value_t = 700)]
-    pub cycles_per_second: u32,
+    /// The number of instructions per frame
+    #[arg(short, long = "ipf", default_value_t = 20)]
+    pub instructions_per_frame: u32,
 
     /// FX55 & FX65 increment I with X if true, and with X + 1 if false
     #[arg(long)]
