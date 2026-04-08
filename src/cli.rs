@@ -43,4 +43,8 @@ pub struct Args {
     /// FX55 & FX65 leave the I register unchanged if true, and increment it if false
     #[arg(long)]
     pub memory_leave_i_unchanged: bool,
+
+    /// Draw instruction will wait until the next frame boundary move on if true
+    #[arg(long)]
+    pub vblank: bool,
 }

@@ -22,6 +22,7 @@ pub struct Machine {
     keyboard: Rc<RefCell<Keyboard>>,
     audio: Audio,
     waiting_for_key_release: Option<usize>,
+    pub is_next_frame: bool,
 }
 
 impl Machine {
@@ -42,6 +43,7 @@ impl Machine {
             keyboard,
             audio: Audio::new(220.0),
             waiting_for_key_release: None,
+            is_next_frame: false,
         };
         machine.inject_font();
 
@@ -61,7 +63,7 @@ impl Machine {
         self.instruction = Instruction::new(self.opcode, self.args.borrow().jump);
     }
 
-    pub fn execute(&mut self) {
+    pub fn execute(&mut self) -> Option<i32> {
         match self.instruction {
             Instruction::I00E0 => {
                 self.back_buffer = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
@@ -162,6 +164,16 @@ impl Machine {
                 self.v[x] = r & nn;
             }
             Instruction::IDXYN(x, y, n) => {
+                if self.args.borrow().vblank {
+                    if !self.is_next_frame {
+                        self.is_next_frame = true;
+                        self.pc -= 2;
+                        return Some(1);
+                    } else {
+                        self.is_next_frame = false;
+                    }
+                }
+
                 let x_coord = (self.v[x] as usize) % SCREEN_WIDTH;
                 let y_coord = (self.v[y] as usize) % SCREEN_HEIGHT;
                 let sprite_vec = self.read_vector(self.i, n as u16);
@@ -270,6 +282,8 @@ impl Machine {
             }
             Instruction::None => panic!("Invalid instruction"),
         };
+
+        None
     }
 
     fn increment_i_for_quirks(&mut self, x: u16) {
@@ -363,11 +377,19 @@ impl Machine {
         }
     }
 
-    pub fn cycle(&mut self) {
+    pub fn cycle(&mut self) -> i32 {
         self.fetch();
         self.decode();
-        self.execute();
+
+        // if execute exits early, return the code
+        let return_code = self.execute();
+        if let Some(code) = return_code {
+            return code;
+        }
+
         self.set_beep();
+
+        0
     }
 
     fn set_beep(&mut self) {

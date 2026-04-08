@@ -308,7 +308,12 @@ impl eframe::App for ChipOxide {
 
         if !self.args.borrow().step_mode {
             for _ in 0..self.args.borrow().instructions_per_frame {
-                self.machine.cycle();
+                let return_code = self.machine.cycle();
+
+                // break if draw is waiting for end of frame
+                if return_code == 1 {
+                    break;
+                }
                 ui.request_repaint();
             }
         }

@@ -4,7 +4,7 @@ A Chip-8 interpreter written in Rust.
 
 ## TODO
 
-- [ ] display wait quirk
+- [x] display wait quirk
 - [ ] vF reset quirk
 - [ ] fix Devicesink error
 - [ ] clear all compiler warnings
