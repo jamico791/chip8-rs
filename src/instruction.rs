@@ -1,3 +1,4 @@
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug)]
 pub enum Instruction {
     I00E0,
@@ -20,7 +21,7 @@ pub enum Instruction {
     I8XYE(usize, usize),
     I9XY0(usize, usize),
     IANNN(u16),
-    IBXNN(usize, u8, u16),
+    IBXNN(usize, u16),
     IBNNN(u16),
     ICXNN(usize, u8),
     IDXYN(usize, usize, u8),
@@ -76,7 +77,7 @@ impl Instruction {
             (0xA, _, _, _) => Instruction::IANNN(nnn),
             (0xB, _, _, _) => {
                 if jump {
-                    Instruction::IBXNN(x, nn, nnn)
+                    Instruction::IBXNN(x, nnn)
                 } else {
                     Instruction::IBNNN(nnn)
                 }
@@ -122,7 +123,7 @@ impl std::fmt::Display for Instruction {
             Instruction::I8XYE(x, y) => write!(f, "v{x:X} <<= v{y:X}"),
             Instruction::I9XY0(x, y) => write!(f, "if v{x:X} == v{y:X} then"),
             Instruction::IANNN(nnn) => write!(f, "i := {nnn:#05X}"),
-            Instruction::IBXNN(x, _, nnn) => write!(f, "jump{x:X} {nnn:#05X}"),
+            Instruction::IBXNN(x, nnn) => write!(f, "jump{x:X} {nnn:#05X}"),
             Instruction::IBNNN(nnn) => write!(f, "jump0 {nnn:#05X}"),
             Instruction::ICXNN(x, nn) => write!(f, "v{x:X} := random {nn:#04X}"),
             Instruction::IDXYN(x, y, n) => write!(f, "sprite v{x:X} v{y:X} {n:#03X}"),

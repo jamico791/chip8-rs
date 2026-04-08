@@ -156,7 +156,7 @@ impl Machine {
             Instruction::IANNN(nnn) => {
                 self.i = nnn;
             }
-            Instruction::IBXNN(x, _, nnn) => {
+            Instruction::IBXNN(x, nnn) => {
                 self.pc = nnn + self.v[x] as u16;
             }
             Instruction::IBNNN(nnn) => {
