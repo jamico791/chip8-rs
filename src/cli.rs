@@ -47,4 +47,8 @@ pub struct Args {
     /// Draw instruction will wait until the next frame boundary move on if true
     #[arg(long)]
     pub vblank: bool,
+
+    /// 8XY1/2/3 set vF to 0 if true, and leave it unchanged if false
+    #[arg(long)]
+    pub logic: bool,
 }

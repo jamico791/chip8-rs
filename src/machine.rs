@@ -107,12 +107,15 @@ impl Machine {
             }
             Instruction::I8XY1(x, y) => {
                 self.v[x] |= self.v[y];
+                self.logic_quirk();
             }
             Instruction::I8XY2(x, y) => {
                 self.v[x] &= self.v[y];
+                self.logic_quirk();
             }
             Instruction::I8XY3(x, y) => {
                 self.v[x] ^= self.v[y];
+                self.logic_quirk();
             }
             Instruction::I8XY4(x, y) => {
                 let (result, did_overflow) = self.v[x].overflowing_add(self.v[y]);
@@ -293,6 +296,12 @@ impl Machine {
             } else {
                 self.i + x + 1
             }
+        }
+    }
+
+    fn logic_quirk(&mut self) {
+        if self.args.borrow().logic {
+            self.v[0xF] = 0;
         }
     }
 
